@@ -127,10 +127,39 @@ func (c *APIConfig) GetEnvVars(agentIdentity string) map[string]string {
 
 // AppConfig 应用配置
 type AppConfig struct {
-	DefaultAgent string     `json:"default_agent" toml:"default_agent"`
-	API          *APIConfig `json:"api" toml:"api"`
-	Theme        string     `json:"theme" toml:"theme"`
-	Language     string     `json:"language" toml:"language"`
+	DefaultAgent string                   `json:"default_agent" toml:"default_agent"`
+	API          *APIConfig               `json:"api" toml:"api"`
+	Theme        string                   `json:"theme" toml:"theme"`
+	Language     string                   `json:"language" toml:"language"`
+	McpServers   map[string]*McpServerCfg `json:"mcp_servers" toml:"mcp_servers"` // MCP服务器配置
+}
+
+// McpServerCfg MCP服务器配置
+type McpServerCfg struct {
+	Name        string            `toml:"name" json:"name"`
+	Type        string            `toml:"type" json:"type"`               // "stdio", "http", "sse"
+	Command     string            `toml:"command" json:"command"`         // stdio类型
+	Args        []string          `toml:"args" json:"args"`               // stdio类型
+	URL         string            `toml:"url" json:"url"`                 // http/sse类型
+	Headers     map[string]string `toml:"headers" json:"headers"`         // http/sse类型
+	Env         map[string]string `toml:"env" json:"env"`                 // 环境变量
+	Description string            `toml:"description" json:"description"` // 描述
+	Enabled     bool              `toml:"enabled" json:"enabled"`         // 是否启用
+}
+
+// GetEnabledMcpServers 获取启用的MCP服务器列表
+func (c *AppConfig) GetEnabledMcpServers() []*McpServerCfg {
+	var servers []*McpServerCfg
+	for name, server := range c.McpServers {
+		if server.Enabled {
+			// 确保名称设置
+			if server.Name == "" {
+				server.Name = name
+			}
+			servers = append(servers, server)
+		}
+	}
+	return servers
 }
 
 // DefaultAppConfig 返回默认应用配置
@@ -140,6 +169,7 @@ func DefaultAppConfig() *AppConfig {
 		API:          &APIConfig{},
 		Theme:        "default",
 		Language:     "zh-CN",
+		McpServers:   make(map[string]*McpServerCfg),
 	}
 }
 

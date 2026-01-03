@@ -12,6 +12,7 @@ import (
 
 	"github.com/anthropics/goad/internal/agent"
 	"github.com/anthropics/goad/internal/config"
+	"github.com/anthropics/goad/internal/session"
 	"github.com/anthropics/goad/internal/tui"
 )
 
@@ -120,8 +121,8 @@ func runMain(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("未找到代理: %s", agentName)
 	}
 
-	// 创建代理实例
-	ag := agent.NewAgent(agentConfig, appConfig.API, absPath)
+	// 创建代理实例（传递完整应用配置以支持MCP服务器）
+	ag := agent.NewAgentWithAppConfig(agentConfig, appConfig.API, appConfig, absPath)
 
 	// 启动代理
 	if err := ag.Start(); err != nil {
@@ -287,4 +288,104 @@ var listCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// 会话历史命令
+var historyCmd = &cobra.Command{
+	Use:   "history",
+	Short: "查看会话历史",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr, err := session.NewManager()
+		if err != nil {
+			return fmt.Errorf("创建会话管理器失败: %w", err)
+		}
+
+		sessions, err := mgr.List()
+		if err != nil {
+			return fmt.Errorf("获取会话列表失败: %w", err)
+		}
+
+		if len(sessions) == 0 {
+			fmt.Println("暂无会话历史")
+			return nil
+		}
+
+		fmt.Println("会话历史:")
+		fmt.Println()
+
+		for _, s := range sessions {
+			title := s.Title
+			if title == "" {
+				title = "(无标题)"
+			}
+			fmt.Printf("  [%s] %s\n", s.ID, title)
+			fmt.Printf("    代理: %s | 消息: %d | 更新: %s\n",
+				s.AgentID,
+				len(s.Messages),
+				s.UpdatedAt.Format("2006-01-02 15:04"))
+			fmt.Println()
+		}
+
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(historyCmd)
+}
+
+// 导出命令
+var exportCmd = &cobra.Command{
+	Use:   "export <session-id> [output-file]",
+	Short: "导出会话记录",
+	Args:  cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sessionID := args[0]
+
+		mgr, err := session.NewManager()
+		if err != nil {
+			return fmt.Errorf("创建会话管理器失败: %w", err)
+		}
+
+		s, err := mgr.Load(sessionID)
+		if err != nil {
+			return fmt.Errorf("加载会话失败: %w", err)
+		}
+
+		// 确定格式
+		format := session.FormatMarkdown
+		formatStr, _ := cmd.Flags().GetString("format")
+		switch formatStr {
+		case "json":
+			format = session.FormatJSON
+		case "text", "txt":
+			format = session.FormatText
+		case "md", "markdown":
+			format = session.FormatMarkdown
+		}
+
+		// 导出
+		content, err := s.Export(format)
+		if err != nil {
+			return fmt.Errorf("导出失败: %w", err)
+		}
+
+		// 输出到文件或标准输出
+		if len(args) > 1 {
+			outputPath := args[1]
+			if err := os.WriteFile(outputPath, []byte(content), 0644); err != nil {
+				return fmt.Errorf("写入文件失败: %w", err)
+			}
+			fmt.Printf("已导出到: %s\n", outputPath)
+		} else {
+			fmt.Println(content)
+		}
+
+		return nil
+	},
+}
+
+func init() {
+	exportCmd.Flags().StringP("format", "f", "markdown", "导出格式 (markdown, json, text)")
+	rootCmd.AddCommand(exportCmd)
 }

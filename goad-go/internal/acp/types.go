@@ -60,10 +60,45 @@ type TerminalExitStatus struct {
 
 // McpServer MCP服务器配置
 type McpServer struct {
-	Args    []string      `json:"args,omitempty"`
-	Command string        `json:"command,omitempty"`
-	Env     []EnvVariable `json:"env,omitempty"`
 	Name    string        `json:"name,omitempty"`
+	Type    string        `json:"type,omitempty"`    // "stdio", "http", "sse"
+	Command string        `json:"command,omitempty"` // stdio类型时使用
+	Args    []string      `json:"args,omitempty"`    // stdio类型时使用
+	Env     []EnvVariable `json:"env,omitempty"`     // 环境变量
+	URL     string        `json:"url,omitempty"`     // http/sse类型时使用
+	Headers map[string]string `json:"headers,omitempty"` // http/sse类型时使用
+}
+
+// McpServerConfig MCP服务器配置（用于配置文件）
+type McpServerConfig struct {
+	Name        string            `toml:"name" json:"name"`
+	Type        string            `toml:"type" json:"type"`               // "stdio", "http", "sse"
+	Command     string            `toml:"command" json:"command"`         // stdio类型
+	Args        []string          `toml:"args" json:"args"`               // stdio类型
+	URL         string            `toml:"url" json:"url"`                 // http/sse类型
+	Headers     map[string]string `toml:"headers" json:"headers"`         // http/sse类型
+	Env         map[string]string `toml:"env" json:"env"`                 // 环境变量
+	Description string            `toml:"description" json:"description"` // 描述
+	Enabled     bool              `toml:"enabled" json:"enabled"`         // 是否启用
+}
+
+// ToMcpServer 转换为MCP服务器配置
+func (c *McpServerConfig) ToMcpServer() McpServer {
+	server := McpServer{
+		Name:    c.Name,
+		Type:    c.Type,
+		Command: c.Command,
+		Args:    c.Args,
+		URL:     c.URL,
+		Headers: c.Headers,
+	}
+
+	// 转换环境变量
+	for k, v := range c.Env {
+		server.Env = append(server.Env, EnvVariable{Name: k, Value: v})
+	}
+
+	return server
 }
 
 // ======================== 内容类型 ========================

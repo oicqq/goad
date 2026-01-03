@@ -28,6 +28,7 @@ const (
 type Agent struct {
 	config      *config.AgentConfig
 	apiConfig   *config.APIConfig
+	appConfig   *config.AppConfig // 应用配置（包含MCP服务器）
 	projectRoot string
 	sessionID   string
 
@@ -46,6 +47,7 @@ type Agent struct {
 	authMethods  []acp.AuthMethod
 	modes        map[string]*acp.SessionMode
 	currentMode  string
+	models       *acp.SessionModelState // 可用模型
 
 	// 工具调用追踪
 	toolCalls   map[string]*acp.ToolCall
@@ -70,10 +72,16 @@ type Agent struct {
 
 // NewAgent 创建新的代理实例
 func NewAgent(agentConfig *config.AgentConfig, apiConfig *config.APIConfig, projectRoot string) *Agent {
+	return NewAgentWithAppConfig(agentConfig, apiConfig, nil, projectRoot)
+}
+
+// NewAgentWithAppConfig 创建新的代理实例（带完整应用配置）
+func NewAgentWithAppConfig(agentConfig *config.AgentConfig, apiConfig *config.APIConfig, appConfig *config.AppConfig, projectRoot string) *Agent {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Agent{
 		config:          agentConfig,
 		apiConfig:       apiConfig,
+		appConfig:       appConfig,
 		projectRoot:     projectRoot,
 		toolCalls:       make(map[string]*acp.ToolCall),
 		terminalManager: terminal.NewManager(),
@@ -381,9 +389,29 @@ func (a *Agent) initialize() error {
 
 // newSession 创建新会话
 func (a *Agent) newSession() error {
+	// 构建MCP服务器列表
+	var mcpServers []acp.McpServer
+	if a.appConfig != nil {
+		for _, serverCfg := range a.appConfig.GetEnabledMcpServers() {
+			server := acp.McpServer{
+				Name:    serverCfg.Name,
+				Type:    serverCfg.Type,
+				Command: serverCfg.Command,
+				Args:    serverCfg.Args,
+				URL:     serverCfg.URL,
+				Headers: serverCfg.Headers,
+			}
+			// 转换环境变量
+			for k, v := range serverCfg.Env {
+				server.Env = append(server.Env, acp.EnvVariable{Name: k, Value: v})
+			}
+			mcpServers = append(mcpServers, server)
+		}
+	}
+
 	params := &acp.NewSessionParams{
 		Cwd:        a.projectRoot,
-		McpServers: nil,
+		McpServers: mcpServers,
 	}
 
 	resp, err := a.client.Call("session/new", params)
@@ -401,6 +429,11 @@ func (a *Agent) newSession() error {
 	}
 
 	a.sessionID = sessionResp.SessionID
+
+	// 保存模型信息
+	if sessionResp.Models != nil {
+		a.models = sessionResp.Models
+	}
 
 	if sessionResp.Modes != nil {
 		a.currentMode = sessionResp.Modes.CurrentModeID
@@ -486,6 +519,35 @@ func (a *Agent) GetModes() map[string]*acp.SessionMode {
 // GetCurrentMode 获取当前模式
 func (a *Agent) GetCurrentMode() string {
 	return a.currentMode
+}
+
+// GetModels 获取可用模型
+func (a *Agent) GetModels() *acp.SessionModelState {
+	return a.models
+}
+
+// SetModel 设置当前模型
+func (a *Agent) SetModel(modelID string) error {
+	params := map[string]interface{}{
+		"sessionId": a.sessionID,
+		"modelId":   modelID,
+	}
+
+	resp, err := a.client.Call("session/set_model", params)
+	if err != nil {
+		return err
+	}
+
+	if resp.Error != nil {
+		return resp.Error
+	}
+
+	// 更新本地模型状态
+	if a.models != nil {
+		a.models.CurrentModelID = modelID
+	}
+
+	return nil
 }
 
 // ProjectRoot 返回项目根目录
