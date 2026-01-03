@@ -1,0 +1,57 @@
+# OpenAI Codex CLI 代理配置
+# https://github.com/openai/codex
+
+identity = "openai.com"
+name = "Codex CLI"
+short_name = "codex"
+url = "https://developers.openai.com/codex/cli/"
+protocol = "acp"
+author_name = "OpenAI"
+author_url = "https://www.openai.com/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "OpenAI的轻量级终端编码代理，原生支持ACP"
+tags = ["coding", "ai", "openai"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "npx @zed-industries/codex-acp"
+
+help = '''
+# Codex CLI
+
+**轻量级终端编码代理**
+
+Codex CLI是OpenAI的终端编码代理，内置Agent Client Protocol支持。
+
+## 特性
+
+- **Agent Client Protocol (ACP)**: 原生ACP支持，无缝编辑器集成
+- **Zed集成**: Zed IDE (v0.208+) 内置支持
+- **终端优先**: 为命令行开发者设计
+
+## ACP集成
+
+Codex开箱即用地支持ACP兼容编辑器:
+- Zed: 打开代理面板 (cmd-?/ctrl-?) 并启动新的Codex线程
+- 其他ACP客户端: 使用 `codex-acp` 命令
+
+## 安装
+
+通过npm或Homebrew全局安装:
+- npm: `npm i -g @openai/codex`
+- Homebrew: `brew install --cask codex`
+
+---
+
+**GitHub**: https://github.com/openai/codex
+**ACP适配器**: https://github.com/zed-industries/codex-acp
+'''
+
+welcome = "欢迎使用Codex CLI！我是OpenAI的编码助手。"
+
+[actions."*".install]
+command = "npm install -g @openai/codex"
+description = "安装Codex CLI"

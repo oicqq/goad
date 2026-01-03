@@ -1,0 +1,42 @@
+# Gemini CLI 代理配置
+# https://github.com/google-gemini/gemini-cli
+
+identity = "geminicli.com"
+name = "Gemini CLI"
+short_name = "gemini"
+url = "https://geminicli.com/"
+protocol = "acp"
+author_name = "Google"
+author_url = "https://www.google.com"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "使用AI查询和编辑大型代码库，从图片或PDF生成应用，自动化复杂工作流"
+tags = ["coding", "ai", "google", "gemini"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "gemini --experimental-acp"
+
+help = '''
+# Gemini CLI
+
+**使用AI构建、调试和部署**
+
+查询和编辑大型代码库，从图片或PDF生成应用，自动化复杂工作流 - 全部在终端完成。
+
+## 特性
+
+- 大型代码库理解和编辑
+- 从图片和PDF生成应用
+- 复杂工作流自动化
+- 原生ACP支持
+
+'''
+
+welcome = "欢迎使用Gemini CLI！让我帮你构建、调试和部署。"
+
+[actions."*".install]
+command = "npm install -g @google/gemini-cli"
+description = "安装Gemini CLI"

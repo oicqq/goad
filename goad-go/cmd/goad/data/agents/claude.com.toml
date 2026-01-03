@@ -1,0 +1,42 @@
+# Claude Code 代理配置
+# https://www.claude.com/product/claude-code
+
+identity = "claude.com"
+name = "Claude Code"
+short_name = "claude"
+url = "https://www.claude.com/product/claude-code"
+protocol = "acp"
+author_name = "Anthropic"
+author_url = "https://www.anthropic.com/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "在终端中释放Claude的强大能力"
+tags = ["coding", "ai", "anthropic"]
+active = true
+recommended = true
+
+[run_command]
+"*" = "claude-code-acp"
+
+help = '''
+# Claude Code
+
+专为开发者打造，在终端中释放Claude的强大能力。
+- 即时搜索百万行代码库
+- 将数小时的工作流程转化为一条命令
+- 你的工具，你的工作流，你的代码库，以思考的速度进化
+
+---
+[Claude Code ACP适配器](https://github.com/zed-industries/claude-code-acp) 由 Zed Industries 提供。
+'''
+
+welcome = "欢迎使用Claude Code！我可以帮你编写、调试和重构代码。"
+
+[actions."*".install]
+command = "curl -fsSL https://claude.ai/install.sh | bash && npm install -g @zed-industries/claude-code-acp"
+description = "安装Claude Code + ACP适配器"
+
+[actions."*".install_acp]
+command = "npm install -g @zed-industries/claude-code-acp"
+description = "仅安装ACP适配器"
