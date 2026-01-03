@@ -1,0 +1,54 @@
+# Amp (AmpCode) 代理配置
+# https://ampcode.com
+
+identity = "ampcode.com"
+name = "Amp (AmpCode)"
+short_name = "amp"
+url = "https://ampcode.com"
+protocol = "acp"
+author_name = "AmpCode"
+author_url = "https://ampcode.com"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "开源ACP适配器，通过ACP协议将Amp CLI暴露给编辑器"
+tags = ["coding", "ai", "sourcegraph"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "npx -y amp-acp"
+
+help = '''
+# Amp (AmpCode)
+
+Amp是Sourcegraph打造的终端和编辑器前沿编码代理。
+
+- **多模型**: Sonnet、GPT-5、快速模型 - Amp根据任务选择最佳模型
+- **有主见**: 只保留好用的功能
+- **前沿**: 跟随模型发展，不兼容旧版
+- **线程**: 可以保存和分享与Amp的交互
+
+## 前置要求
+
+- Node.js 18+ 以运行npx适配器
+- 确保`AMP_EXECUTABLE`环境变量指向Amp二进制文件
+
+---
+
+**仓库**: https://github.com/tao12345666333/amp-acp
+'''
+
+welcome = "欢迎使用Amp！"
+
+[actions."*".install]
+command = "curl -fsSL https://ampcode.com/install.sh | bash && npm install -g amp-acp"
+description = "安装AMP Code"
+
+[actions."*".install_adapter]
+command = "npm install -g amp-acp"
+description = "安装Amp ACP适配器"
+
+[actions."*".login]
+command = "amp login"
+description = "登录Amp（首次运行）"

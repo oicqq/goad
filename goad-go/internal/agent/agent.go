@@ -9,12 +9,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 
 	"github.com/anthropics/goad/internal/acp"
 	"github.com/anthropics/goad/internal/config"
 	"github.com/anthropics/goad/internal/jsonrpc"
+	"github.com/anthropics/goad/internal/terminal"
 )
 
 // 应用信息
@@ -51,10 +51,10 @@ type Agent struct {
 	toolCalls   map[string]*acp.ToolCall
 	toolCallsMu sync.RWMutex
 
-	// 终端管理
-	terminals   map[string]*Terminal
-	terminalsMu sync.RWMutex
-	terminalID  int
+	// PTY终端管理
+	terminalManager *terminal.Manager
+	terminalID      int
+	terminalsMu     sync.RWMutex
 
 	// 消息通道
 	messages chan acp.Message
@@ -68,28 +68,19 @@ type Agent struct {
 	mu      sync.RWMutex
 }
 
-// Terminal 代表一个代理创建的终端
-type Terminal struct {
-	ID      string
-	Cmd     *exec.Cmd
-	Output  strings.Builder
-	Done    chan struct{}
-	ExitCode *int
-}
-
 // NewAgent 创建新的代理实例
 func NewAgent(agentConfig *config.AgentConfig, apiConfig *config.APIConfig, projectRoot string) *Agent {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Agent{
-		config:      agentConfig,
-		apiConfig:   apiConfig,
-		projectRoot: projectRoot,
-		toolCalls:   make(map[string]*acp.ToolCall),
-		terminals:   make(map[string]*Terminal),
-		modes:       make(map[string]*acp.SessionMode),
-		messages:    make(chan acp.Message, 100),
-		ctx:         ctx,
-		cancel:      cancel,
+		config:          agentConfig,
+		apiConfig:       apiConfig,
+		projectRoot:     projectRoot,
+		toolCalls:       make(map[string]*acp.ToolCall),
+		terminalManager: terminal.NewManager(),
+		modes:           make(map[string]*acp.SessionMode),
+		messages:        make(chan acp.Message, 100),
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -183,6 +174,11 @@ func (a *Agent) Stop() error {
 
 	a.cancel()
 	a.running = false
+
+	// 关闭所有PTY终端
+	if a.terminalManager != nil {
+		a.terminalManager.CloseAll()
+	}
 
 	if a.stdin != nil {
 		a.stdin.Close()

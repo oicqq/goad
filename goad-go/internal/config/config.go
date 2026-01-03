@@ -152,6 +152,27 @@ func ConfigDir() (string, error) {
 	return filepath.Join(homeDir, ".config", "goad"), nil
 }
 
+// UserAgentsDir 返回用户自定义代理目录路径
+func UserAgentsDir() (string, error) {
+	configDir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "agents"), nil
+}
+
+// EnsureUserAgentsDir 确保用户自定义代理目录存在
+func EnsureUserAgentsDir() (string, error) {
+	dir, err := UserAgentsDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("创建用户代理目录失败: %w", err)
+	}
+	return dir, nil
+}
+
 // LoadAppConfig 加载应用配置
 func LoadAppConfig() (*AppConfig, error) {
 	configDir, err := ConfigDir()

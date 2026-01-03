@@ -1,0 +1,54 @@
+# OpenCode 代理配置
+# https://github.com/sst/opencode
+
+identity = "opencode.ai"
+name = "OpenCode"
+short_name = "opencode"
+url = "https://opencode.ai/"
+protocol = "acp"
+author_name = "SST"
+author_url = "https://sst.dev/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "为终端打造的AI编码代理，客户端/服务器架构，支持ACP"
+tags = ["coding", "ai", "open-source"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "opencode acp"
+
+help = '''
+# OpenCode
+
+**为终端打造的AI编码代理**
+
+OpenCode是一个开源代理，帮助你直接在终端编写和运行代码，采用灵活的客户端/服务器架构。
+
+## 主要特性
+
+- **客户端/服务器架构**: 在本地运行，远程控制
+- **终端原生**: 为命令行开发者打造
+- **多LLM支持**: 支持多种AI提供商
+- **GitHub集成**: 深度GitHub工作流集成
+
+## ACP集成
+
+OpenCode通过**opencode-acp**适配器支持ACP协议：
+- 启动每会话MCP HTTP服务器
+- 代理文件和终端操作到ACP
+- 转换OpenCode流式更新为ACP通知
+
+---
+
+**网站**: https://opencode.ai/
+**GitHub**: https://github.com/sst/opencode
+**ACP适配器**: https://github.com/josephschmitt/opencode-acp
+'''
+
+welcome = "欢迎使用OpenCode！"
+
+[actions."*".install]
+command = "npm i -g opencode-ai"
+description = "安装OpenCode"

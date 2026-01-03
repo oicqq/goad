@@ -1,0 +1,46 @@
+# Auggie (Augment Code) 代理配置
+# https://www.augmentcode.com/
+
+identity = "augmentcode.com"
+name = "Auggie (Augment Code)"
+short_name = "auggie"
+url = "https://www.augmentcode.com/product/CLI"
+protocol = "acp"
+author_name = "Augment Code"
+author_url = "https://www.augmentcode.com/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "将Augment Code强大能力带到终端的AI代理，支持Zed、Neovim和Emacs"
+tags = ["coding", "ai"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "auggie --acp"
+
+help = '''
+# Auggie (Augment Code)
+
+*跟随代码的代理CLI*
+
+## 特性
+
+- **ACP支持**: 在Zed、Neovim、Emacs等ACP兼容编辑器中使用
+- **自主代码分析**: 智能探索代码库并构建工作记忆
+- **多编辑器集成**: 无缝集成你喜欢的开发环境
+
+---
+
+**文档**: https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli
+'''
+
+welcome = "欢迎使用Auggie！"
+
+[actions."*".install]
+command = "npm install -g @augmentcode/auggie"
+description = "安装Auggie CLI（需要Node 22+）"
+
+[actions."*".login]
+command = "auggie login"
+description = "登录Auggie（首次运行）"

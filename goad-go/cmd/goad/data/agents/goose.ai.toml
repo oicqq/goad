@@ -1,0 +1,51 @@
+# Goose 代理配置
+# https://github.com/block/goose
+
+identity = "goose.ai"
+name = "Goose"
+short_name = "goose"
+url = "https://block.github.io/goose/"
+protocol = "acp"
+author_name = "Block"
+author_url = "https://block.xyz/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "开源可扩展AI代理，超越代码建议 - 安装、执行、编辑和测试"
+tags = ["coding", "ai", "open-source"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "goose acp"
+
+help = '''
+# Goose
+
+**开源可扩展AI代理**
+
+Goose是一个开放框架，不仅提供代码建议，还能安装依赖、执行命令、编辑文件和运行测试。
+
+## 主要特性
+
+- **可扩展框架**: 基于插件的架构
+- **多LLM支持**: 支持多种LLM提供商
+- **ACP支持**: 原生ACP支持，便于编辑器集成
+
+## 配置
+
+可通过环境变量覆盖ACP配置：
+- `GOOSE_PROVIDER`: 设置LLM提供商
+- `GOOSE_MODEL`: 指定模型
+
+---
+
+**文档**: https://block.github.io/goose/docs/guides/acp-clients/
+**GitHub**: https://github.com/block/goose
+'''
+
+welcome = "欢迎使用Goose！"
+
+[actions."*".install]
+command = "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash"
+description = "安装Goose"

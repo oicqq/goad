@@ -1,0 +1,36 @@
+# OpenHands 代理配置
+# https://openhands.dev/
+
+identity = "openhands.dev"
+name = "OpenHands"
+short_name = "openhands"
+url = "https://openhands.dev/"
+protocol = "acp"
+author_name = "OpenHands"
+author_url = "https://openhands.dev/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "开放的云编码代理平台，开源、模型无关、企业就绪"
+tags = ["coding", "ai", "open-source"]
+active = true
+recommended = true
+
+[run_command]
+"*" = "openhands acp"
+
+help = '''
+# OpenHands
+
+开放的云编码代理平台
+
+从一个到数千个代理的扩展 - 开源、模型无关、企业就绪。
+
+[openhands-dev](https://openhands.dev/)
+'''
+
+welcome = "欢迎使用OpenHands！软件开发的未来应由工程师书写。"
+
+[actions."*".install]
+command = "uv tool install openhands -U --python 3.12 && openhands login"
+description = "安装OpenHands"

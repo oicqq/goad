@@ -1,0 +1,46 @@
+# Docker cagent 代理配置
+# https://github.com/docker/cagent
+
+identity = "docker.com"
+name = "Docker cagent"
+short_name = "cagent"
+url = "https://docs.docker.com/ai/cagent/"
+protocol = "acp"
+author_name = "Docker"
+author_url = "https://www.docker.com/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "Docker工程团队的Agent构建和运行时，支持MCP和ACP"
+tags = ["coding", "ai", "docker"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "cagent acp"
+
+help = '''
+# Docker cagent
+
+**Docker工程团队的Agent构建和运行时**
+
+让你构建、编排和分享协同工作的AI代理。
+
+## 主要特性
+
+- **层级代理系统**: 多代理间的智能任务委派
+- **MCP支持**: 通过MCP集成丰富的工具生态
+- **多接口**: CLI、TUI、API服务器和MCP服务器模式
+- **分享与分发**: 将代理打包为OCI制品并分享到Docker Hub
+
+---
+
+**文档**: https://docs.docker.com/ai/cagent/
+**GitHub**: https://github.com/docker/cagent
+'''
+
+welcome = "你好，欢迎使用cagent！"
+
+[actions."*".install]
+command = "echo '请安装Docker Desktop 4.49+（包含cagent）: https://www.docker.com/products/docker-desktop/'"
+description = "安装Docker Desktop（包含cagent）"

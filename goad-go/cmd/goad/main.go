@@ -96,6 +96,12 @@ func runMain(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("加载代理配置失败: %w", err)
 	}
 
+	// 加载用户自定义代理（会覆盖同名的内置代理）
+	if userAgentsDir, err := config.UserAgentsDir(); err == nil {
+		// 忽略错误，用户目录可能不存在
+		_ = registry.LoadFromDirectory(userAgentsDir)
+	}
+
 	// 确定要使用的代理
 	agentName := agentFlag
 	if agentName == "" {
@@ -248,6 +254,15 @@ var listCmd = &cobra.Command{
 			return fmt.Errorf("加载代理配置失败: %w", err)
 		}
 
+		// 加载用户自定义代理
+		userAgentsDir, _ := config.UserAgentsDir()
+		hasUserAgents := false
+		if userAgentsDir != "" {
+			if err := registry.LoadFromDirectory(userAgentsDir); err == nil {
+				hasUserAgents = true
+			}
+		}
+
 		fmt.Println("可用代理:")
 		fmt.Println()
 
@@ -260,6 +275,14 @@ var listCmd = &cobra.Command{
 			fmt.Printf("    %s\n", agent.Description)
 			fmt.Printf("    命令: %s\n", agent.GetRunCommand())
 			fmt.Println()
+		}
+
+		// 显示用户自定义代理目录提示
+		fmt.Println("---")
+		if hasUserAgents {
+			fmt.Printf("用户代理目录: %s\n", userAgentsDir)
+		} else {
+			fmt.Printf("提示: 可在 %s 添加自定义代理配置(.toml)\n", userAgentsDir)
 		}
 
 		return nil

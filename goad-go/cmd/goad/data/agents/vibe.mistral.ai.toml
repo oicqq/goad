@@ -1,0 +1,36 @@
+# Mistral Vibe 代理配置
+# https://mistral.ai/
+
+identity = "vibe.mistral.ai"
+name = "Mistral Vibe"
+short_name = "vibe"
+url = "https://mistral.ai/news/devstral-2-vibe-cli"
+protocol = "acp"
+author_name = "Mistral"
+author_url = "https://mistral.ai/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "最先进的开源代理编码模型和CLI代理"
+tags = ["coding", "ai", "mistral", "open-source"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "vibe-acp"
+
+help = '''
+# Devstral2 Mistral Vibe CLI
+
+Devstral 2 - 下一代编码模型系列，提供两种规格：
+- Devstral 2 (123B) - MIT许可证
+- Devstral Small 2 (24B) - Apache 2.0
+
+都是开源且宽松许可的。
+'''
+
+welcome = "欢迎使用Mistral Vibe！"
+
+[actions."*".install]
+command = "curl -LsSf https://mistral.ai/vibe/install.sh | bash"
+description = "安装Mistral Vibe"

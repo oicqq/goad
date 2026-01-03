@@ -1,0 +1,55 @@
+# Stakpak Agent 代理配置
+# https://github.com/stakpak/agent
+
+identity = "stakpak.dev"
+name = "Stakpak Agent"
+short_name = "stakpak"
+url = "https://stakpak.dev/"
+protocol = "acp"
+author_name = "Stakpak"
+author_url = "https://stakpak.dev/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "Rust编写的终端原生DevOps代理，企业级安全，支持ACP和IaC生成"
+tags = ["coding", "ai", "devops", "rust"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "stakpak acp"
+
+help = '''
+# Stakpak Agent
+
+**最安全的运维和DevOps代理**
+
+Stakpak是用Rust构建的终端原生DevOps代理，具有企业级安全特性和ACP支持。
+
+## 主要特性
+
+- **企业级安全**:
+  - 双向TLS (mTLS) 加密
+  - 动态密钥脱敏
+  - 隐私优先架构
+- **DevOps能力**: 运行命令、编辑文件、搜索文档、生成高质量IaC
+- **ACP支持**: 原生ACP支持，便于编辑器集成
+- **Rust性能**: 用Rust构建，快速可靠
+
+## 安全性
+
+- 通过mTLS实现端到端加密
+- 自动检测和脱敏敏感信息
+- 隐私优先设计原则
+
+---
+
+**GitHub**: https://github.com/stakpak/agent
+**网站**: https://stakpak.dev/
+'''
+
+welcome = "欢迎使用Stakpak Agent！"
+
+[actions."*".install]
+command = "cargo install stakpak"
+description = "通过Cargo安装Stakpak Agent"

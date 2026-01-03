@@ -1,0 +1,36 @@
+# Hugging Face Inference Providers 代理配置
+# https://huggingface.co
+
+identity = "inference.huggingface.co"
+name = "Hugging Face Inference"
+short_name = "hf"
+url = "https://huggingface.co"
+protocol = "acp"
+author_name = "Hugging Face"
+author_url = "https://huggingface.co"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "chat"
+description = "与Hugging Face推理提供商的最新开源模型聊天"
+tags = ["chat", "ai", "huggingface", "open-source"]
+active = true
+recommended = true
+
+[run_command]
+"*" = "hf-inference-acp -x"
+
+help = '''
+# Hugging Face Inference Providers
+
+使用Hugging Face推理提供商与最新的开源权重模型聊天。
+
+---
+
+在huggingface.co/join创建账户，注册[Toad Explorers](https://huggingface.co/toad-hf-inference-explorers)获得**$10**免费额度！
+'''
+
+welcome = "欢迎使用Hugging Face Inference！"
+
+[actions."*".install]
+command = "uv tool install -U hf-inference-acp --with-executables-from huggingface_hub --force"
+description = "安装Hugging Face Inference Providers"

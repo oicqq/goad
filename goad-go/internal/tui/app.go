@@ -13,6 +13,9 @@ import (
 	"github.com/anthropics/goad/internal/acp"
 	"github.com/anthropics/goad/internal/agent"
 	"github.com/anthropics/goad/internal/config"
+	"github.com/anthropics/goad/internal/tui/diff"
+	"github.com/anthropics/goad/internal/tui/highlight"
+	"github.com/anthropics/goad/internal/tui/markdown"
 	"github.com/anthropics/goad/internal/tui/styles"
 )
 
@@ -47,6 +50,18 @@ type Model struct {
 	viewport viewport.Model
 	textarea textarea.Model
 	messages []ChatMessage
+
+	// 滚动状态
+	autoScroll bool // 是否自动滚动到底部
+
+	// 语法高亮
+	highlighter *highlight.Highlighter
+
+	// 差异渲染
+	diffRenderer *diff.Renderer
+
+	// Markdown渲染
+	mdRenderer *markdown.Renderer
 
 	// 当前状态
 	thinking    bool
@@ -103,15 +118,19 @@ func New(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.Agent
 	vp.SetContent("")
 
 	return Model{
-		agent:       ag,
-		appConfig:   appConfig,
-		agentConfig: agentConfig,
-		textarea:    ta,
-		viewport:    vp,
-		messages:    []ChatMessage{},
-		toolCalls:   make(map[string]*acp.ToolCall),
-		modes:       make(map[string]*acp.SessionMode),
-		showSidebar: true,
+		agent:        ag,
+		appConfig:    appConfig,
+		agentConfig:  agentConfig,
+		textarea:     ta,
+		viewport:     vp,
+		messages:     []ChatMessage{},
+		toolCalls:    make(map[string]*acp.ToolCall),
+		modes:        make(map[string]*acp.SessionMode),
+		showSidebar:  true,
+		autoScroll:   true,              // 默认自动滚动
+		highlighter:  highlight.New(),   // 初始化语法高亮器
+		diffRenderer: diff.New(),        // 初始化差异渲染器
+		mdRenderer:   markdown.New(80),  // 初始化Markdown渲染器
 	}
 }
 
@@ -163,11 +182,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Height = contentHeight
 		m.textarea.SetWidth(contentWidth - 2)
 
+		// 更新Markdown渲染器宽度
+		if m.mdRenderer != nil {
+			m.mdRenderer.SetWidth(contentWidth - 4)
+		}
+
 		m.updateViewportContent()
 
 	case AgentMessageMsg:
 		m.handleAgentMessage(msg.Message)
 		m.updateViewportContent()
+		// 只有在自动滚动模式下才滚动到底部
+		if m.autoScroll {
+			m.viewport.GotoBottom()
+		}
 		cmds = append(cmds, m.listenForAgentMessages())
 
 	case PromptSentMsg:
@@ -225,6 +253,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		})
 		m.textarea.Reset()
 		m.thinking = true
+		m.autoScroll = true // 发送消息时恢复自动滚动
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
 
@@ -235,11 +264,58 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.messages = []ChatMessage{}
 		m.toolCalls = make(map[string]*acp.ToolCall)
 		m.planEntries = nil
+		m.autoScroll = true
 		m.updateViewportContent()
 
 	case "ctrl+b":
 		// 切换侧边栏
 		m.showSidebar = !m.showSidebar
+
+	// 滚动控制
+	case "pgup", "ctrl+u":
+		// 向上翻页
+		m.autoScroll = false
+		m.viewport.HalfViewUp()
+		return m, nil
+
+	case "pgdown", "ctrl+d":
+		// 向下翻页
+		m.viewport.HalfViewDown()
+		// 如果滚动到底部，恢复自动滚动
+		if m.viewport.AtBottom() {
+			m.autoScroll = true
+		}
+		return m, nil
+
+	case "home", "ctrl+home":
+		// 滚动到顶部
+		m.autoScroll = false
+		m.viewport.GotoTop()
+		return m, nil
+
+	case "end", "ctrl+end":
+		// 滚动到底部
+		m.autoScroll = true
+		m.viewport.GotoBottom()
+		return m, nil
+
+	case "up":
+		// 如果输入框为空，向上滚动；否则在输入框中移动
+		if m.textarea.Value() == "" {
+			m.autoScroll = false
+			m.viewport.LineUp(1)
+			return m, nil
+		}
+
+	case "down":
+		// 如果输入框为空，向下滚动；否则在输入框中移动
+		if m.textarea.Value() == "" {
+			m.viewport.LineDown(1)
+			if m.viewport.AtBottom() {
+				m.autoScroll = true
+			}
+			return m, nil
+		}
 
 	case "f1":
 		// 帮助
@@ -369,7 +445,15 @@ func (m *Model) updateViewportContent() {
 			content.WriteString(styles.UserMessageStyle.Render("你: " + msg.Content))
 			content.WriteString("\n\n")
 		case "agent":
-			content.WriteString(styles.AgentMessageStyle.Render(msg.Content))
+			// 对代理消息进行Markdown渲染
+			renderedContent := msg.Content
+			if m.mdRenderer != nil && markdown.HasMarkdown(msg.Content) {
+				renderedContent = m.mdRenderer.Render(msg.Content)
+			} else if m.highlighter != nil {
+				// 如果没有Markdown，使用语法高亮处理代码块
+				renderedContent = m.highlighter.HighlightInline(msg.Content)
+			}
+			content.WriteString(styles.AgentMessageStyle.Render(renderedContent))
 			content.WriteString("\n")
 		case "thinking":
 			content.WriteString(styles.ThinkingStyle.Render("思考: " + msg.Content))
@@ -451,20 +535,36 @@ func (m Model) renderDiff(content acp.ToolCallContent) string {
 	b.WriteString(styles.DiffPathStyle.Render(path))
 	b.WriteString("\n")
 
-	// 简单的差异显示
-	if oldText != "" {
-		oldLines := strings.Split(oldText, "\n")
-		for _, line := range oldLines {
-			b.WriteString(styles.DiffRemoveStyle.Render("- " + line))
-			b.WriteString("\n")
-		}
-	}
+	// 使用增强的差异渲染器
+	if m.diffRenderer != nil && oldText != "" && newText != "" {
+		diffOutput := m.diffRenderer.RenderUnifiedDiff(oldText, newText, path)
+		b.WriteString(diffOutput)
+	} else {
+		// 回退到简单显示
+		language := highlight.DetectLanguage(path)
 
-	if newText != "" {
-		newLines := strings.Split(newText, "\n")
-		for _, line := range newLines {
-			b.WriteString(styles.DiffAddStyle.Render("+ " + line))
-			b.WriteString("\n")
+		if oldText != "" {
+			oldLines := strings.Split(oldText, "\n")
+			for _, line := range oldLines {
+				highlighted := line
+				if language != "" && m.highlighter != nil {
+					highlighted = m.highlighter.Highlight(line, language)
+				}
+				b.WriteString(styles.DiffRemoveStyle.Render("- " + highlighted))
+				b.WriteString("\n")
+			}
+		}
+
+		if newText != "" {
+			newLines := strings.Split(newText, "\n")
+			for _, line := range newLines {
+				highlighted := line
+				if language != "" && m.highlighter != nil {
+					highlighted = m.highlighter.Highlight(line, language)
+				}
+				b.WriteString(styles.DiffAddStyle.Render("+ " + highlighted))
+				b.WriteString("\n")
+			}
 		}
 	}
 
@@ -628,9 +728,20 @@ func (m Model) renderFooter() string {
 		status = fmt.Sprintf("错误: %v", m.err)
 	}
 
-	left := styles.StatusBarStyle.Render(status)
+	// 添加滚动指示器
+	scrollInfo := ""
+	if m.viewport.TotalLineCount() > m.viewport.Height {
+		percent := m.viewport.ScrollPercent() * 100
+		if m.autoScroll {
+			scrollInfo = " [底部]"
+		} else {
+			scrollInfo = fmt.Sprintf(" [%.0f%%]", percent)
+		}
+	}
 
-	help := "Ctrl+Enter: 发送 | Ctrl+C: 退出 | F1: 帮助 | F2: 设置"
+	left := styles.StatusBarStyle.Render(status + scrollInfo)
+
+	help := "Ctrl+Enter: 发送 | PgUp/PgDn: 滚动 | End: 到底部 | Ctrl+C: 退出"
 	right := styles.HelpStyle.Render(help)
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)

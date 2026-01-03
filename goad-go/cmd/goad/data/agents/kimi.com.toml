@@ -1,0 +1,39 @@
+# Kimi CLI 代理配置
+# https://github.com/MoonshotAI/kimi-cli
+
+identity = "kimi.com"
+name = "Kimi CLI"
+short_name = "kimi"
+url = "https://www.kimi.com/"
+protocol = "acp"
+author_name = "Moonshot AI"
+author_url = "https://www.kimi.com/"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "月之暗面出品的CLI代理，帮助你完成软件开发和终端操作"
+tags = ["coding", "ai", "moonshot", "chinese"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "kimi --acp"
+
+help = '''
+# Kimi CLI
+
+Kimi CLI是月之暗面出品的CLI代理，可以帮助你完成软件开发任务和终端操作。
+
+配置说明请参考：
+https://github.com/MoonshotAI/kimi-cli?tab=readme-ov-file#usage
+'''
+
+welcome = "欢迎使用Kimi CLI！"
+
+[actions."*".install]
+command = "uv tool install kimi-cli --no-cache"
+description = "安装Kimi CLI"
+
+[actions."*".upgrade]
+command = "uv tool upgrade kimi-cli --no-cache"
+description = "升级Kimi CLI"

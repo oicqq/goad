@@ -1,0 +1,56 @@
+# VT Code 代理配置
+# https://github.com/vinhnx/vtcode
+
+identity = "vtcode.dev"
+name = "VT Code"
+short_name = "vtcode"
+url = "https://github.com/vinhnx/vtcode"
+protocol = "acp"
+author_name = "Vinh Nguyen"
+author_url = "https://github.com/vinhnx"
+publisher_name = "Goad"
+publisher_url = "https://github.com/anthropics/goad"
+type = "coding"
+description = "Rust编写的终端编码代理，通过Tree-sitter和ast-grep提供语义代码智能"
+tags = ["coding", "ai", "rust", "semantic"]
+active = true
+recommended = false
+
+[run_command]
+"*" = "vtcode acp"
+
+help = '''
+# VT Code
+
+**语义编码代理**
+
+VT Code是用Rust构建的终端编码代理，具有语义代码智能和原生ACP支持。
+
+## 主要特性
+
+- **语义代码智能**:
+  - Tree-sitter集成用于语法感知分析
+  - ast-grep集成用于语义搜索
+  - 高级令牌预算跟踪
+- **多LLM支持**: 支持多种LLM提供商，自动故障转移
+- **丰富终端UI**: 实时流式美观TUI
+- **编辑器集成**: 通过ACP原生支持Zed IDE
+- **安全性**: 纵深防御安全模型
+
+## 智能工具
+
+- 内置代码分析和重构
+- 带语义理解的文件操作
+- 终端命令执行
+- 自定义shell命令的生命周期钩子
+
+---
+
+**GitHub**: https://github.com/vinhnx/vtcode
+'''
+
+welcome = "欢迎使用VT Code！"
+
+[actions."*".install]
+command = "cargo install --git https://github.com/vinhnx/vtcode"
+description = "通过Cargo安装VT Code"

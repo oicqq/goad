@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/anthropics/goad/internal/acp"
@@ -178,107 +178,84 @@ func (a *Agent) handleCreateTerminal(p *acp.CreateTerminalParams) (*acp.CreateTe
 	a.terminalID++
 	terminalID := fmt.Sprintf("terminal-%d", a.terminalID)
 
-	// 构建命令
-	args := append([]string{"-c", p.Command}, p.Args...)
-	cmd := exec.CommandContext(a.ctx, "sh", args...)
-
 	// 设置工作目录
-	if p.Cwd != "" {
-		cmd.Dir = p.Cwd
-	} else {
-		cmd.Dir = a.projectRoot
+	workDir := p.Cwd
+	if workDir == "" {
+		workDir = a.projectRoot
 	}
 
-	// 设置环境变量
-	cmd.Env = os.Environ()
+	// 构建完整命令
+	fullCommand := p.Command
+	if len(p.Args) > 0 {
+		fullCommand = fullCommand + " " + strings.Join(p.Args, " ")
+	}
+
+	// 使用PTY创建终端
+	t, err := a.terminalManager.Create(terminalID, "", 24, 80, workDir)
+	if err != nil {
+		return nil, fmt.Errorf("创建PTY终端失败: %w", err)
+	}
+
+	// 写入命令
+	if fullCommand != "" {
+		t.WriteString(fullCommand + "\n")
+	}
+
+	// 设置环境变量（通过 export）
 	for _, ev := range p.Env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", ev.Name, ev.Value))
+		t.WriteString(fmt.Sprintf("export %s=%q\n", ev.Name, ev.Value))
 	}
 
-	// 创建终端记录
-	terminal := &Terminal{
-		ID:   terminalID,
-		Cmd:  cmd,
-		Done: make(chan struct{}),
-	}
-
-	// 获取输出
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, err
-	}
-
-	// 启动命令
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-
-	// 读取输出
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := stdout.Read(buf)
-			if n > 0 {
-				terminal.Output.Write(buf[:n])
-			}
-			if err != nil {
-				break
-			}
-		}
-	}()
-
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := stderr.Read(buf)
-			if n > 0 {
-				terminal.Output.Write(buf[:n])
-			}
-			if err != nil {
-				break
-			}
-		}
-	}()
-
-	// 等待完成
-	go func() {
-		cmd.Wait()
-		exitCode := cmd.ProcessState.ExitCode()
-		terminal.ExitCode = &exitCode
-		close(terminal.Done)
-	}()
-
-	a.terminals[terminalID] = terminal
+	// 启动终端输出收集
+	go a.collectTerminalOutput(terminalID, t)
 
 	return &acp.CreateTerminalResponse{TerminalID: terminalID}, nil
 }
 
+// terminalOutputs 存储终端输出
+var terminalOutputs = struct {
+	sync.RWMutex
+	data map[string]*strings.Builder
+}{data: make(map[string]*strings.Builder)}
+
+// collectTerminalOutput 收集终端输出
+func (a *Agent) collectTerminalOutput(terminalID string, t interface{ Output() <-chan []byte; Done() <-chan struct{} }) {
+	terminalOutputs.Lock()
+	terminalOutputs.data[terminalID] = &strings.Builder{}
+	terminalOutputs.Unlock()
+
+	for {
+		select {
+		case data, ok := <-t.Output():
+			if !ok {
+				return
+			}
+			terminalOutputs.Lock()
+			if buf, exists := terminalOutputs.data[terminalID]; exists {
+				buf.Write(data)
+			}
+			terminalOutputs.Unlock()
+		case <-t.Done():
+			return
+		case <-a.ctx.Done():
+			return
+		}
+	}
+}
+
 // handleKillTerminal 处理杀死终端请求
 func (a *Agent) handleKillTerminal(p *acp.KillTerminalParams) (*acp.KillTerminalResponse, error) {
-	a.terminalsMu.RLock()
-	terminal, ok := a.terminals[p.TerminalID]
-	a.terminalsMu.RUnlock()
-
-	if !ok {
-		return &acp.KillTerminalResponse{}, nil
+	if err := a.terminalManager.Close(p.TerminalID); err != nil {
+		return nil, err
 	}
-
-	if terminal.Cmd != nil && terminal.Cmd.Process != nil {
-		terminal.Cmd.Process.Kill()
-	}
-
 	return &acp.KillTerminalResponse{}, nil
 }
 
 // handleTerminalOutput 处理获取终端输出请求
 func (a *Agent) handleTerminalOutput(p *acp.TerminalOutputParams) (*acp.TerminalOutputResponse, error) {
-	a.terminalsMu.RLock()
-	terminal, ok := a.terminals[p.TerminalID]
-	a.terminalsMu.RUnlock()
+	terminalOutputs.RLock()
+	buf, ok := terminalOutputs.data[p.TerminalID]
+	terminalOutputs.RUnlock()
 
 	if !ok {
 		return &acp.TerminalOutputResponse{
@@ -287,14 +264,19 @@ func (a *Agent) handleTerminalOutput(p *acp.TerminalOutputParams) (*acp.Terminal
 		}, nil
 	}
 
+	output := buf.String()
+
 	resp := &acp.TerminalOutputResponse{
-		Output:    terminal.Output.String(),
-		Truncated: false,
+		Output:    output,
+		Truncated: len(output) > 100000,
 	}
 
-	if terminal.ExitCode != nil {
+	// 检查终端是否已退出
+	t, exists := a.terminalManager.Get(p.TerminalID)
+	if exists && !t.IsRunning() {
+		exitCode := 0
 		resp.ExitStatus = &acp.TerminalExitStatus{
-			ExitCode: terminal.ExitCode,
+			ExitCode: &exitCode,
 		}
 	}
 
@@ -303,36 +285,33 @@ func (a *Agent) handleTerminalOutput(p *acp.TerminalOutputParams) (*acp.Terminal
 
 // handleReleaseTerminal 处理释放终端请求
 func (a *Agent) handleReleaseTerminal(p *acp.ReleaseTerminalParams) (*acp.ReleaseTerminalResponse, error) {
-	a.terminalsMu.Lock()
-	delete(a.terminals, p.TerminalID)
-	a.terminalsMu.Unlock()
+	a.terminalManager.Close(p.TerminalID)
+
+	terminalOutputs.Lock()
+	delete(terminalOutputs.data, p.TerminalID)
+	terminalOutputs.Unlock()
 
 	return &acp.ReleaseTerminalResponse{}, nil
 }
 
 // handleWaitForTerminalExit 处理等待终端退出请求
 func (a *Agent) handleWaitForTerminalExit(p *acp.WaitForTerminalExitParams) (*acp.WaitForTerminalExitResponse, error) {
-	a.terminalsMu.RLock()
-	terminal, ok := a.terminals[p.TerminalID]
-	a.terminalsMu.RUnlock()
-
+	t, ok := a.terminalManager.Get(p.TerminalID)
 	if !ok {
 		return &acp.WaitForTerminalExitResponse{}, nil
 	}
 
 	// 等待终端完成
 	select {
-	case <-terminal.Done:
+	case <-t.Done():
 	case <-a.ctx.Done():
 		return nil, a.ctx.Err()
 	}
 
-	resp := &acp.WaitForTerminalExitResponse{}
-	if terminal.ExitCode != nil {
-		resp.ExitCode = terminal.ExitCode
-	}
-
-	return resp, nil
+	exitCode := 0
+	return &acp.WaitForTerminalExitResponse{
+		ExitCode: &exitCode,
+	}, nil
 }
 
 // 原子计数器用于生成唯一ID
