@@ -13,6 +13,7 @@ import (
 	"github.com/anthropics/goad/internal/acp"
 	"github.com/anthropics/goad/internal/agent"
 	"github.com/anthropics/goad/internal/config"
+	"github.com/anthropics/goad/internal/tui/components"
 	"github.com/anthropics/goad/internal/tui/diff"
 	"github.com/anthropics/goad/internal/tui/highlight"
 	"github.com/anthropics/goad/internal/tui/markdown"
@@ -69,7 +70,14 @@ type Model struct {
 	currentMode string
 	modes       map[string]*acp.SessionMode
 
-	// 权限请求
+	// 增强组件
+	permissionDialog *components.PermissionDialog  // 权限对话框
+	toolCallPanel    *components.ToolCallPanel     // 工具调用面板
+	thinkingDisplay  *components.ThinkingDisplay   // 思考过程显示
+	fuzzyFinder      *components.FuzzyFinder       // 模糊搜索
+	sessionPicker    *components.SessionPicker     // 会话选择器
+
+	// 旧的权限请求（保持兼容）
 	permissionRequest *acp.PermissionRequestMessage
 	selectedOption    int
 
@@ -117,20 +125,30 @@ func New(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.Agent
 	vp := viewport.New(80, 20)
 	vp.SetContent("")
 
+	// 初始化会话选择器
+	sessionPicker := components.NewSessionPicker()
+	sessionPicker.Initialize() // 预加载会话列表
+
 	return Model{
-		agent:        ag,
-		appConfig:    appConfig,
-		agentConfig:  agentConfig,
-		textarea:     ta,
-		viewport:     vp,
-		messages:     []ChatMessage{},
-		toolCalls:    make(map[string]*acp.ToolCall),
-		modes:        make(map[string]*acp.SessionMode),
-		showSidebar:  true,
-		autoScroll:   true,              // 默认自动滚动
-		highlighter:  highlight.New(),   // 初始化语法高亮器
-		diffRenderer: diff.New(),        // 初始化差异渲染器
-		mdRenderer:   markdown.New(80),  // 初始化Markdown渲染器
+		agent:            ag,
+		appConfig:        appConfig,
+		agentConfig:      agentConfig,
+		textarea:         ta,
+		viewport:         vp,
+		messages:         []ChatMessage{},
+		toolCalls:        make(map[string]*acp.ToolCall),
+		modes:            make(map[string]*acp.SessionMode),
+		showSidebar:      true,
+		autoScroll:       true,
+		highlighter:      highlight.New(),
+		diffRenderer:     diff.New(),
+		mdRenderer:       markdown.New(80),
+		// 初始化增强组件
+		permissionDialog: components.NewPermissionDialog(),
+		toolCallPanel:    components.NewToolCallPanel(),
+		thinkingDisplay:  components.NewThinkingDisplay(),
+		fuzzyFinder:      components.NewFuzzyFinder(),
+		sessionPicker:    sessionPicker,
 	}
 }
 
@@ -224,7 +242,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg 处理按键消息
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// 处理权限请求
+	// 处理模糊搜索
+	if m.fuzzyFinder.IsActive() {
+		return m.handleFuzzyFinderKey(msg)
+	}
+
+	// 处理会话选择器
+	if m.sessionPicker.IsActive() {
+		return m.handleSessionPickerKey(msg)
+	}
+
+	// 处理权限请求（新组件优先）
+	if m.permissionDialog.IsActive() {
+		return m.handlePermissionDialogKey(msg)
+	}
+
+	// 处理权限请求（旧方式兼容）
 	if m.permissionRequest != nil {
 		return m.handlePermissionKey(msg)
 	}
@@ -263,6 +296,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// 清屏
 		m.messages = []ChatMessage{}
 		m.toolCalls = make(map[string]*acp.ToolCall)
+		m.toolCallPanel.Clear()
+		m.thinkingDisplay.Clear()
 		m.planEntries = nil
 		m.autoScroll = true
 		m.updateViewportContent()
@@ -270,6 +305,26 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+b":
 		// 切换侧边栏
 		m.showSidebar = !m.showSidebar
+
+	case "ctrl+p":
+		// 打开文件模糊搜索
+		m.fuzzyFinder.LoadFilesFromDir(m.agent.ProjectRoot(), 5)
+		m.fuzzyFinder.SetSize(m.width-10, m.height-10)
+		m.fuzzyFinder.Activate()
+		return m, nil
+
+	case "ctrl+r":
+		// 打开会话恢复
+		m.sessionPicker.LoadForAgent(m.agentConfig.ShortName)
+		m.sessionPicker.SetSize(m.width-10, m.height-10)
+		m.sessionPicker.Activate()
+		return m, nil
+
+	case "ctrl+t":
+		// 切换思考过程折叠
+		m.thinkingDisplay.ToggleAll()
+		m.updateViewportContent()
+		return m, nil
 
 	// 滚动控制
 	case "pgup", "ctrl+u":
@@ -337,6 +392,98 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleFuzzyFinderKey 处理模糊搜索按键
+func (m Model) handleFuzzyFinderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.fuzzyFinder.Deactivate()
+	case "enter":
+		if item := m.fuzzyFinder.GetSelected(); item != nil {
+			// 将选中的文件路径插入到输入框
+			m.textarea.SetValue(m.textarea.Value() + item.Value)
+			m.fuzzyFinder.Deactivate()
+		}
+	case "up":
+		m.fuzzyFinder.MoveUp()
+	case "down":
+		m.fuzzyFinder.MoveDown()
+	case "backspace":
+		m.fuzzyFinder.DeleteChar()
+	default:
+		// 追加到搜索查询
+		if len(msg.String()) == 1 {
+			m.fuzzyFinder.AppendQuery(rune(msg.String()[0]))
+		}
+	}
+	return m, nil
+}
+
+// handleSessionPickerKey 处理会话选择器按键
+func (m Model) handleSessionPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.sessionPicker.Deactivate()
+	case "enter":
+		if sess := m.sessionPicker.GetSelected(); sess != nil {
+			// 恢复会话到消息列表
+			for _, msg := range sess.Messages {
+				m.messages = append(m.messages, ChatMessage{
+					Role:    msg.Role,
+					Content: msg.Content,
+				})
+			}
+			m.sessionPicker.Deactivate()
+			m.updateViewportContent()
+			m.viewport.GotoBottom()
+		}
+	case "up":
+		m.sessionPicker.MoveUp()
+	case "down":
+		m.sessionPicker.MoveDown()
+	case "delete":
+		m.sessionPicker.DeleteSelected()
+	case "backspace":
+		m.sessionPicker.DeleteChar()
+	default:
+		if len(msg.String()) == 1 {
+			m.sessionPicker.AppendQuery(rune(msg.String()[0]))
+		}
+	}
+	return m, nil
+}
+
+// handlePermissionDialogKey 处理权限对话框按键
+func (m Model) handlePermissionDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		m.permissionDialog.MoveUp()
+	case "down", "j":
+		m.permissionDialog.MoveDown()
+	case "tab":
+		m.permissionDialog.ToggleDetails()
+	case "enter":
+		if resp := m.permissionDialog.Confirm(); resp != nil {
+			if m.permissionRequest != nil {
+				m.permissionRequest.ResponseCh <- acp.PermissionResponse{
+					OptionID: resp.OptionID,
+					Outcome:  resp.Outcome,
+				}
+				m.permissionRequest = nil
+			}
+			m.permissionDialog.Clear()
+		}
+	case "esc":
+		if m.permissionRequest != nil {
+			m.permissionRequest.ResponseCh <- acp.PermissionResponse{
+				Outcome: "cancelled",
+			}
+			m.permissionRequest = nil
+		}
+		m.permissionDialog.Clear()
+	}
+	return m, nil
+}
+
 // handlePermissionKey 处理权限请求按键
 func (m Model) handlePermissionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -394,10 +541,13 @@ func (m *Model) handleAgentMessage(msg acp.Message) {
 		}
 
 	case *acp.ThinkingMessage:
-		// 累积思考消息
+		// 使用思考显示组件
+		m.thinkingDisplay.AppendContent(msg.Text)
+		// 同时保留旧方式（兼容）
 		if len(m.messages) > 0 && m.messages[len(m.messages)-1].Role == "thinking" {
 			m.messages[len(m.messages)-1].Content += msg.Text
 		} else {
+			m.thinkingDisplay.StartBlock()
 			m.messages = append(m.messages, ChatMessage{
 				Role:    "thinking",
 				Content: msg.Text,
@@ -406,10 +556,23 @@ func (m *Model) handleAgentMessage(msg acp.Message) {
 
 	case *acp.ToolCallMessage:
 		m.toolCalls[msg.ToolCall.ToolCallID] = msg.ToolCall
+		m.toolCallPanel.Update(msg.ToolCall)
 
 	case *acp.ToolCallUpdateMessage:
 		if msg.ToolCall != nil {
 			m.toolCalls[msg.ToolCall.ToolCallID] = msg.ToolCall
+			m.toolCallPanel.Update(msg.ToolCall)
+		} else if msg.Update != nil {
+			// 合并更新到现有的工具调用
+			if existing, ok := m.toolCalls[msg.Update.ToolCallID]; ok {
+				if msg.Update.Title != "" {
+					existing.Title = msg.Update.Title
+				}
+				if msg.Update.Status != "" {
+					existing.Status = msg.Update.Status
+				}
+				m.toolCallPanel.Update(existing)
+			}
 		}
 
 	case *acp.PlanMessage:
@@ -417,6 +580,9 @@ func (m *Model) handleAgentMessage(msg acp.Message) {
 
 	case *acp.PermissionRequestMessage:
 		m.permissionRequest = msg
+		// 同时设置到新组件
+		m.permissionDialog.SetRequest(msg)
+		m.permissionDialog.SetWidth(m.width - 20)
 
 	case *acp.ModeUpdateMessage:
 		m.currentMode = msg.CurrentModeID
@@ -659,7 +825,62 @@ func (m Model) View() string {
 	footer := m.renderFooter()
 	b.WriteString(footer)
 
-	return b.String()
+	// 渲染模态框覆盖层
+	baseView := b.String()
+
+	// 模糊搜索覆盖层
+	if m.fuzzyFinder.IsActive() {
+		overlay := m.renderOverlay(m.fuzzyFinder.View())
+		return overlay
+	}
+
+	// 会话选择器覆盖层
+	if m.sessionPicker.IsActive() {
+		overlay := m.renderOverlay(m.sessionPicker.View())
+		return overlay
+	}
+
+	// 权限对话框覆盖层
+	if m.permissionDialog.IsActive() {
+		overlay := m.renderOverlay(m.permissionDialog.View())
+		return overlay
+	}
+
+	return baseView
+}
+
+// renderOverlay 渲染覆盖层
+func (m Model) renderOverlay(content string) string {
+	// 计算居中位置
+	contentWidth := lipgloss.Width(content)
+	contentHeight := lipgloss.Height(content)
+
+	hPad := (m.width - contentWidth) / 2
+	vPad := (m.height - contentHeight) / 3
+
+	if hPad < 0 {
+		hPad = 0
+	}
+	if vPad < 0 {
+		vPad = 0
+	}
+
+	var result strings.Builder
+
+	// 添加垂直填充
+	for i := 0; i < vPad; i++ {
+		result.WriteString("\n")
+	}
+
+	// 添加水平填充并渲染内容
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		result.WriteString(strings.Repeat(" ", hPad))
+		result.WriteString(line)
+		result.WriteString("\n")
+	}
+
+	return result.String()
 }
 
 // renderHeader 渲染头部
@@ -739,9 +960,20 @@ func (m Model) renderFooter() string {
 		}
 	}
 
-	left := styles.StatusBarStyle.Render(status + scrollInfo)
+	// 添加工具调用计数
+	toolInfo := ""
+	if m.toolCallPanel.Count() > 0 {
+		active := m.toolCallPanel.ActiveCount()
+		if active > 0 {
+			toolInfo = fmt.Sprintf(" | 工具:%d(%d活跃)", m.toolCallPanel.Count(), active)
+		} else {
+			toolInfo = fmt.Sprintf(" | 工具:%d", m.toolCallPanel.Count())
+		}
+	}
 
-	help := "Ctrl+Enter: 发送 | PgUp/PgDn: 滚动 | End: 到底部 | Ctrl+C: 退出"
+	left := styles.StatusBarStyle.Render(status + scrollInfo + toolInfo)
+
+	help := "Ctrl+Enter: 发送 | Ctrl+P: 搜索 | Ctrl+R: 恢复 | Ctrl+T: 折叠思考"
 	right := styles.HelpStyle.Render(help)
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)

@@ -115,3 +115,49 @@ ANTHROPIC_BASE_URL=https://pmpjfbhq.cn-nb1.rainapp.top
 - 总计: 24个Go文件
 - 新增模块: commands, danger, complete, history
 
+## P0/P1 优化功能完成 (2026-01-03)
+
+### P0: 权限请求对话框增强
+- 组件位置: `internal/tui/components/permission.go`
+- 详情切换 (Tab键): 显示工具调用位置、内容预览
+- 选项类型着色: 允许=绿色, 拒绝=红色
+- 居中渲染支持
+
+### P0: 工具调用状态面板
+- 组件位置: `internal/tui/components/toolpanel.go`
+- 实时追踪工具调用状态 (pending/running/completed/failed)
+- 执行时间显示
+- 可折叠/展开
+- 紧凑视图用于侧边栏
+
+### P1: 模糊搜索 (Ctrl+P)
+- 组件位置: `internal/tui/components/fuzzy.go`
+- 模糊匹配算法: 连续匹配加分、单词边界加分、前缀匹配加分
+- 从目录加载文件 (支持深度限制)
+- 自动忽略: .git, node_modules, vendor, __pycache__ 等
+- 文件分类标签: Go, Python, JS/TS, Markdown, Config
+
+### P1: 会话恢复 (Ctrl+R)
+- 组件位置: `internal/tui/components/session.go`
+- 按代理ID加载历史会话
+- 会话搜索过滤
+- 会话删除功能
+- 显示会话元信息: 代理、消息数、更新时间
+
+### P1: 思考过程折叠显示 (Ctrl+T)
+- 组件位置: `internal/tui/components/thinking.go`
+- 思考块管理: 自动分块、时间追踪
+- 折叠/展开切换 (单块或全部)
+- 内容预览 (折叠时显示前50字符)
+- 紧凑视图用于侧边栏
+
+### TUI集成
+- 新增快捷键: Ctrl+P (搜索), Ctrl+R (恢复), Ctrl+T (折叠思考)
+- 模态框覆盖层渲染系统
+- 底部状态栏: 滚动位置、工具调用计数
+- 组件初始化和事件处理整合
+
+### Go文件统计
+- 总计: 29个Go文件
+- 新增模块: components (permission, toolpanel, fuzzy, session, thinking)
+
