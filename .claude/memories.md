@@ -194,3 +194,39 @@ ANTHROPIC_BASE_URL=https://pmpjfbhq.cn-nb1.rainapp.top
 - 总计: 32个Go文件
 - 新增模块: autocomplete, tabs, editor
 
+## P3 优化功能完成 (2026-01-04)
+
+### P3: 插件系统
+- 包位置: `internal/plugin/plugin.go`
+- 插件类型: command, hook, formatter, provider
+- 钩子点: before_prompt, after_response, before_tool_call, after_tool_call, on_error, on_session_start, on_session_end
+- 插件管理: 加载、启用、禁用、重新加载
+- 配置格式: TOML
+- 默认目录: ~/.config/goad/plugins/
+
+### P3: 配置热更新
+- 包位置: `internal/hotreload/hotreload.go`
+- 基于 fsnotify 文件监视
+- 配置类型: app, agent, plugin, theme
+- 防抖处理: 500ms 默认防抖时间
+- 监视目录: config.toml, agents/, plugins/, themes/
+- 变更回调: 支持注册多个处理器
+
+### P3: 性能监控仪表盘 (F4)
+- 包位置: `internal/metrics/metrics.go`
+- 指标类型: counter, gauge, histogram, timing
+- 会话统计: 提示数、响应数、工具调用数、Token使用、延迟
+- 仪表盘标签: 概览、会话、指标、系统
+- 系统信息: 内存、GC、Goroutines、CPU核心、Go版本
+- 快捷键: F4 (打开), ←→ (切换标签), R (刷新), Esc (关闭)
+
+### TUI集成
+- 新增快捷键: F4 (性能监控)
+- 指标收集器集成到Model
+- 仪表盘覆盖层渲染
+
+### Go文件统计
+- 总计: 35个Go文件
+- 新增模块: plugin, hotreload, metrics
+- 新增依赖: github.com/fsnotify/fsnotify
+

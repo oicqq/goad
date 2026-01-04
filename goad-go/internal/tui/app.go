@@ -13,6 +13,7 @@ import (
 	"github.com/anthropics/goad/internal/acp"
 	"github.com/anthropics/goad/internal/agent"
 	"github.com/anthropics/goad/internal/config"
+	"github.com/anthropics/goad/internal/metrics"
 	"github.com/anthropics/goad/internal/tui/components"
 	"github.com/anthropics/goad/internal/tui/diff"
 	"github.com/anthropics/goad/internal/tui/highlight"
@@ -81,6 +82,10 @@ type Model struct {
 	autoComplete *components.AutoComplete // 输入框自动补全
 	tabBar       *components.TabBar       // 多标签会话
 	agentEditor  *components.AgentEditor  // 代理参数编辑器
+
+	// 增强组件 (P3)
+	metricsCollector *metrics.Collector  // 指标收集器
+	metricsDashboard *metrics.Dashboard  // 性能仪表盘
 
 	// 旧的权限请求（保持兼容）
 	permissionRequest *acp.PermissionRequestMessage
@@ -158,6 +163,10 @@ func New(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.Agent
 	agentEditor := components.NewAgentEditor()
 	agentEditor.LoadConfig(agentConfig)
 
+	// 初始化性能监控 (P3)
+	metricsCollector := metrics.NewCollector()
+	metricsDashboard := metrics.NewDashboard(metricsCollector)
+
 	return Model{
 		agent:            ag,
 		appConfig:        appConfig,
@@ -182,6 +191,9 @@ func New(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.Agent
 		autoComplete: autoComplete,
 		tabBar:       tabBar,
 		agentEditor:  agentEditor,
+		// 初始化增强组件 (P3)
+		metricsCollector: metricsCollector,
+		metricsDashboard: metricsDashboard,
 	}
 }
 
@@ -275,6 +287,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg 处理按键消息
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// 处理性能仪表盘
+	if m.metricsDashboard.IsActive() {
+		return m.handleMetricsDashboardKey(msg)
+	}
+
 	// 处理代理编辑器
 	if m.agentEditor.IsActive() {
 		return m.handleAgentEditorKey(msg)
@@ -437,6 +454,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.agentEditor.Activate()
 		return m, nil
 
+	case "f4":
+		// 性能仪表盘
+		m.metricsDashboard.SetSize(m.width-10, m.height-10)
+		m.metricsDashboard.Activate()
+		return m, nil
+
 	case "ctrl+n":
 		// 新建标签（暂不实现多代理）
 		// m.tabBar.NewTab()
@@ -523,6 +546,21 @@ func (m Model) handleAgentEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+s":
 		m.agentEditor.Save()
 		m.agentEditor.Deactivate()
+	}
+	return m, nil
+}
+
+// handleMetricsDashboardKey 处理性能仪表盘按键
+func (m Model) handleMetricsDashboardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.metricsDashboard.Deactivate()
+	case "left", "h":
+		m.metricsDashboard.PrevTab()
+	case "right", "l":
+		m.metricsDashboard.NextTab()
+	case "r":
+		// 刷新 - 目前仪表盘自动读取最新数据，无需特殊处理
 	}
 	return m, nil
 }
@@ -987,6 +1025,12 @@ func (m Model) View() string {
 		return overlay
 	}
 
+	// 性能仪表盘覆盖层
+	if m.metricsDashboard.IsActive() {
+		overlay := m.renderOverlay(m.metricsDashboard.View())
+		return overlay
+	}
+
 	// 自动补全浮动层（不是覆盖层，而是在输入框上方）
 	if m.autoComplete.IsActive() {
 		// 在baseView上附加自动补全
@@ -1130,7 +1174,7 @@ func (m Model) renderFooter() string {
 
 	left := styles.StatusBarStyle.Render(status + scrollInfo + toolInfo)
 
-	help := "Ctrl+Enter: 发送 | Ctrl+P: 搜索 | Ctrl+R: 恢复 | F3: 编辑代理"
+	help := "Ctrl+Enter: 发送 | Ctrl+P: 搜索 | F3: 代理 | F4: 监控"
 	right := styles.HelpStyle.Render(help)
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
