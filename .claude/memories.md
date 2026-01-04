@@ -161,3 +161,36 @@ ANTHROPIC_BASE_URL=https://pmpjfbhq.cn-nb1.rainapp.top
 - 总计: 29个Go文件
 - 新增模块: components (permission, toolpanel, fuzzy, session, thinking)
 
+## P2 优化功能完成 (2026-01-04)
+
+### P2: 输入框自动补全 (Tab)
+- 组件位置: `internal/tui/components/autocomplete.go`
+- 补全类型: 斜杠命令、文件路径、历史记录
+- 路径补全: 支持 ~/ 展开、目录缓存
+- 命令补全: /help, /clear, /exit, /settings, /model 等
+- 历史记录: 自动去重、限制100条
+
+### P2: 多标签会话
+- 组件位置: `internal/tui/components/tabs.go`
+- 标签状态: Idle, Active, Thinking, Error
+- 标签操作: 新建、关闭、切换
+- 快捷键: Ctrl+Tab (下一个), Ctrl+Shift+Tab (上一个), Ctrl+W (关闭)
+- 最大标签数: 10
+
+### P2: 代理参数编辑器 (F3)
+- 组件位置: `internal/tui/components/editor.go`
+- 可编辑字段: 名称、描述、URL、类型、欢迎语
+- 只读字段: 短名称、标识、运行命令、协议
+- 字段类型: String, Int, Bool, Select, Text
+- 编辑模式: 光标移动、插入、删除
+- 快捷键: Enter (编辑), Tab (切换选项), Ctrl+S (保存), Esc (取消)
+
+### TUI集成
+- 新增快捷键: Tab (补全), F3 (编辑代理), Ctrl+Tab/Shift+Tab (切换标签)
+- 标签栏: 多标签时显示在头部
+- 自动补全浮动层
+
+### Go文件统计
+- 总计: 32个Go文件
+- 新增模块: autocomplete, tabs, editor
+

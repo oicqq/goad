@@ -70,12 +70,17 @@ type Model struct {
 	currentMode string
 	modes       map[string]*acp.SessionMode
 
-	// 增强组件
+	// 增强组件 (P0/P1)
 	permissionDialog *components.PermissionDialog  // 权限对话框
 	toolCallPanel    *components.ToolCallPanel     // 工具调用面板
 	thinkingDisplay  *components.ThinkingDisplay   // 思考过程显示
 	fuzzyFinder      *components.FuzzyFinder       // 模糊搜索
 	sessionPicker    *components.SessionPicker     // 会话选择器
+
+	// 增强组件 (P2)
+	autoComplete *components.AutoComplete // 输入框自动补全
+	tabBar       *components.TabBar       // 多标签会话
+	agentEditor  *components.AgentEditor  // 代理参数编辑器
 
 	// 旧的权限请求（保持兼容）
 	permissionRequest *acp.PermissionRequestMessage
@@ -129,6 +134,30 @@ func New(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.Agent
 	sessionPicker := components.NewSessionPicker()
 	sessionPicker.Initialize() // 预加载会话列表
 
+	// 初始化自动补全
+	autoComplete := components.NewAutoComplete()
+	autoComplete.SetProjectRoot(ag.ProjectRoot())
+	// 添加斜杠命令
+	autoComplete.AddCommand("/help", "显示帮助")
+	autoComplete.AddCommand("/clear", "清除对话")
+	autoComplete.AddCommand("/exit", "退出程序")
+	autoComplete.AddCommand("/settings", "打开设置")
+	autoComplete.AddCommand("/model", "切换模型")
+	autoComplete.AddCommand("/mode", "切换模式")
+	autoComplete.AddCommand("/export", "导出会话")
+	autoComplete.AddCommand("/history", "查看历史")
+	autoComplete.AddCommand("/cancel", "取消操作")
+	autoComplete.AddCommand("/compact", "压缩对话")
+
+	// 初始化标签栏
+	tabBar := components.NewTabBar()
+	tabBar.AddTab("main", agentConfig.Name, agentConfig.ShortName)
+	tabBar.SetActiveIndex(0)
+
+	// 初始化代理编辑器
+	agentEditor := components.NewAgentEditor()
+	agentEditor.LoadConfig(agentConfig)
+
 	return Model{
 		agent:            ag,
 		appConfig:        appConfig,
@@ -143,12 +172,16 @@ func New(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.Agent
 		highlighter:      highlight.New(),
 		diffRenderer:     diff.New(),
 		mdRenderer:       markdown.New(80),
-		// 初始化增强组件
+		// 初始化增强组件 (P0/P1)
 		permissionDialog: components.NewPermissionDialog(),
 		toolCallPanel:    components.NewToolCallPanel(),
 		thinkingDisplay:  components.NewThinkingDisplay(),
 		fuzzyFinder:      components.NewFuzzyFinder(),
 		sessionPicker:    sessionPicker,
+		// 初始化增强组件 (P2)
+		autoComplete: autoComplete,
+		tabBar:       tabBar,
+		agentEditor:  agentEditor,
 	}
 }
 
@@ -242,6 +275,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg 处理按键消息
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// 处理代理编辑器
+	if m.agentEditor.IsActive() {
+		return m.handleAgentEditorKey(msg)
+	}
+
+	// 处理自动补全
+	if m.autoComplete.IsActive() {
+		return m.handleAutoCompleteKey(msg)
+	}
+
 	// 处理模糊搜索
 	if m.fuzzyFinder.IsActive() {
 		return m.handleFuzzyFinderKey(msg)
@@ -387,8 +430,100 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.view = viewSettings
 		}
+
+	case "f3":
+		// 代理编辑器
+		m.agentEditor.SetSize(m.width-10, m.height-10)
+		m.agentEditor.Activate()
+		return m, nil
+
+	case "ctrl+n":
+		// 新建标签（暂不实现多代理）
+		// m.tabBar.NewTab()
+		return m, nil
+
+	case "ctrl+w":
+		// 关闭当前标签
+		m.tabBar.CloseActiveTab()
+		return m, nil
+
+	case "ctrl+tab":
+		// 下一个标签
+		m.tabBar.NextTab()
+		return m, nil
+
+	case "ctrl+shift+tab":
+		// 上一个标签
+		m.tabBar.PrevTab()
+		return m, nil
+
+	case "tab":
+		// Tab键触发自动补全
+		text := m.textarea.Value()
+		if text != "" {
+			m.autoComplete.Update(text)
+			if m.autoComplete.IsActive() {
+				return m, nil
+			}
+		}
 	}
 
+	return m, nil
+}
+
+// handleAutoCompleteKey 处理自动补全按键
+func (m Model) handleAutoCompleteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.autoComplete.Deactivate()
+	case "enter", "tab":
+		if text := m.autoComplete.Accept(); text != "" {
+			m.textarea.SetValue(text)
+			// 添加到历史
+			m.autoComplete.AddHistory(text)
+		}
+	case "up":
+		m.autoComplete.MoveUp()
+	case "down":
+		m.autoComplete.MoveDown()
+	default:
+		// 更新补全
+		m.autoComplete.Deactivate()
+		// 让按键继续传递到textarea
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleAgentEditorKey 处理代理编辑器按键
+func (m Model) handleAgentEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.agentEditor.IsEditMode() {
+		switch msg.String() {
+		case "enter":
+			m.agentEditor.ExitEdit(true)
+		case "esc":
+			m.agentEditor.ExitEdit(false)
+		default:
+			m.agentEditor.HandleEditKey(msg.String())
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc":
+		m.agentEditor.Cancel()
+	case "enter":
+		m.agentEditor.EnterEdit()
+	case "up", "k":
+		m.agentEditor.MoveUp()
+	case "down", "j":
+		m.agentEditor.MoveDown()
+	case "tab":
+		m.agentEditor.CycleOption()
+	case "ctrl+s":
+		m.agentEditor.Save()
+		m.agentEditor.Deactivate()
+	}
 	return m, nil
 }
 
@@ -846,6 +981,18 @@ func (m Model) View() string {
 		return overlay
 	}
 
+	// 代理编辑器覆盖层
+	if m.agentEditor.IsActive() {
+		overlay := m.renderOverlay(m.agentEditor.View())
+		return overlay
+	}
+
+	// 自动补全浮动层（不是覆盖层，而是在输入框上方）
+	if m.autoComplete.IsActive() {
+		// 在baseView上附加自动补全
+		return baseView + "\n" + m.autoComplete.View()
+	}
+
 	return baseView
 }
 
@@ -885,6 +1032,15 @@ func (m Model) renderOverlay(content string) string {
 
 // renderHeader 渲染头部
 func (m Model) renderHeader() string {
+	var header strings.Builder
+
+	// 标签栏（如果有多个标签）
+	if m.tabBar.GetTabCount() > 1 {
+		m.tabBar.SetWidth(m.width)
+		header.WriteString(m.tabBar.View())
+		header.WriteString("\n")
+	}
+
 	title := fmt.Sprintf(" Goad - %s ", m.agentConfig.Name)
 	left := styles.HeaderStyle.Render(title)
 
@@ -904,7 +1060,8 @@ func (m Model) renderHeader() string {
 		gap = 0
 	}
 
-	return left + strings.Repeat(" ", gap) + right
+	header.WriteString(left + strings.Repeat(" ", gap) + right)
+	return header.String()
 }
 
 // renderSidebar 渲染侧边栏
@@ -973,7 +1130,7 @@ func (m Model) renderFooter() string {
 
 	left := styles.StatusBarStyle.Render(status + scrollInfo + toolInfo)
 
-	help := "Ctrl+Enter: 发送 | Ctrl+P: 搜索 | Ctrl+R: 恢复 | Ctrl+T: 折叠思考"
+	help := "Ctrl+Enter: 发送 | Ctrl+P: 搜索 | Ctrl+R: 恢复 | F3: 编辑代理"
 	right := styles.HelpStyle.Render(help)
 
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
