@@ -40,6 +40,9 @@ type Model struct {
 	appConfig   *config.AppConfig
 	agentConfig *config.AgentConfig
 
+	// 渲染器（用于SSH会话）
+	renderer *lipgloss.Renderer
+
 	// UI状态
 	width       int
 	height      int
@@ -126,7 +129,7 @@ type PromptSentMsg struct {
 // New 创建新的TUI模型
 func New(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.AgentConfig) Model {
 	ta := textarea.New()
-	ta.Placeholder = "输入消息... (Ctrl+Enter 发送, Ctrl+C 退出)"
+	ta.Placeholder = "Type message... (Enter to send, Esc to exit)"
 	ta.Focus()
 	ta.CharLimit = 0
 	ta.SetWidth(80)
@@ -181,6 +184,10 @@ func New(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.Agent
 		highlighter:      highlight.New(),
 		diffRenderer:     diff.New(),
 		mdRenderer:       markdown.New(80),
+		// 设置默认窗口大小，避免等待WindowSizeMsg
+		width:            80,
+		height:           24,
+		ready:            true,
 		// 初始化增强组件 (P0/P1)
 		permissionDialog: components.NewPermissionDialog(),
 		toolCallPanel:    components.NewToolCallPanel(),
@@ -195,6 +202,42 @@ func New(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.Agent
 		metricsCollector: metricsCollector,
 		metricsDashboard: metricsDashboard,
 	}
+}
+
+// NewWithRenderer 创建带自定义渲染器的TUI模型（用于SSH会话）
+func NewWithRenderer(ag *agent.Agent, appConfig *config.AppConfig, agentConfig *config.AgentConfig, renderer *lipgloss.Renderer) Model {
+	m := New(ag, appConfig, agentConfig)
+	m.renderer = renderer
+	return m
+}
+
+// SetSize 设置窗口大小
+func (m Model) SetSize(width, height int) Model {
+	m.width = width
+	m.height = height
+
+	// 更新组件大小
+	headerHeight := 1
+	footerHeight := 1
+	inputHeight := 5
+	contentHeight := height - headerHeight - footerHeight - inputHeight
+
+	sidebarWidth := 0
+	if m.showSidebar {
+		sidebarWidth = 30
+	}
+	contentWidth := width - sidebarWidth - 2
+
+	m.viewport.Width = contentWidth
+	m.viewport.Height = contentHeight
+	m.textarea.SetWidth(contentWidth - 2)
+
+	// 更新Markdown渲染器宽度
+	if m.mdRenderer != nil {
+		m.mdRenderer.SetWidth(contentWidth - 4)
+	}
+
+	return m
 }
 
 // Init 初始化
@@ -222,7 +265,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		return m.handleKeyMsg(msg)
+		// 先尝试处理特殊按键
+		newModel, cmd := m.handleKeyMsg(msg)
+		// 如果是特殊按键（有命令返回或状态改变），直接返回
+		if cmd != nil {
+			return newModel, cmd
+		}
+		// 检查是否有模态框激活，如果有则不传递给textarea
+		if m.metricsDashboard.IsActive() || m.agentEditor.IsActive() ||
+			m.autoComplete.IsActive() || m.fuzzyFinder.IsActive() ||
+			m.sessionPicker.IsActive() || m.permissionDialog.IsActive() ||
+			m.permissionRequest != nil {
+			return newModel, nil
+		}
+		// 更新 m 为新的状态
+		m = newModel.(Model)
+		// 普通输入传递给textarea
+		var taCmd tea.Cmd
+		m.textarea, taCmd = m.textarea.Update(msg)
+		if taCmd != nil {
+			cmds = append(cmds, taCmd)
+		}
+		return m, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -333,11 +397,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.agent.Stop()
 		return m, tea.Quit
 
-	case "ctrl+enter", "ctrl+s":
-		// 发送消息
+	case "enter":
+		// Enter 发送消息（如果不是空的且按住了ctrl或在单行模式）
 		text := strings.TrimSpace(m.textarea.Value())
 		if text == "" || m.thinking {
-			return m, nil
+			return m, nil // 空消息不发送，让textarea处理换行
 		}
 
 		m.messages = append(m.messages, ChatMessage{
@@ -346,7 +410,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		})
 		m.textarea.Reset()
 		m.thinking = true
-		m.autoScroll = true // 发送消息时恢复自动滚动
+		m.autoScroll = true
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
 
@@ -361,10 +425,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.planEntries = nil
 		m.autoScroll = true
 		m.updateViewportContent()
+		return m, nil
 
 	case "ctrl+b":
 		// 切换侧边栏
 		m.showSidebar = !m.showSidebar
+		return m, nil
 
 	case "ctrl+p":
 		// 打开文件模糊搜索
@@ -439,6 +505,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.view = viewHelp
 		}
+		return m, nil
 
 	case "f2":
 		// 设置
@@ -447,6 +514,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.view = viewSettings
 		}
+		return m, nil
 
 	case "f3":
 		// 代理编辑器
@@ -691,6 +759,9 @@ func (m Model) handlePermissionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleAgentMessage 处理代理消息
 func (m *Model) handleAgentMessage(msg acp.Message) {
+	// 标记有新内容，用于触发自动滚动
+	hasNewContent := false
+
 	switch msg := msg.(type) {
 	case *acp.AgentReadyMessage:
 		m.agentReady = true
@@ -698,9 +769,11 @@ func (m *Model) handleAgentMessage(msg acp.Message) {
 			Role:    "system",
 			Content: fmt.Sprintf("已连接到 %s", m.agentConfig.Name),
 		})
+		hasNewContent = true
 
 	case *acp.AgentFailMessage:
 		m.err = fmt.Errorf("%s: %s", msg.Reason, msg.Details)
+		hasNewContent = true
 
 	case *acp.UpdateMessage:
 		// 累积代理消息
@@ -712,6 +785,7 @@ func (m *Model) handleAgentMessage(msg acp.Message) {
 				Content: msg.Text,
 			})
 		}
+		hasNewContent = true
 
 	case *acp.ThinkingMessage:
 		// 使用思考显示组件
@@ -726,10 +800,12 @@ func (m *Model) handleAgentMessage(msg acp.Message) {
 				Content: msg.Text,
 			})
 		}
+		hasNewContent = true
 
 	case *acp.ToolCallMessage:
 		m.toolCalls[msg.ToolCall.ToolCallID] = msg.ToolCall
 		m.toolCallPanel.Update(msg.ToolCall)
+		hasNewContent = true
 
 	case *acp.ToolCallUpdateMessage:
 		if msg.ToolCall != nil {
@@ -747,21 +823,29 @@ func (m *Model) handleAgentMessage(msg acp.Message) {
 				m.toolCallPanel.Update(existing)
 			}
 		}
+		hasNewContent = true
 
 	case *acp.PlanMessage:
 		m.planEntries = msg.Entries
+		hasNewContent = true
 
 	case *acp.PermissionRequestMessage:
 		m.permissionRequest = msg
 		// 同时设置到新组件
 		m.permissionDialog.SetRequest(msg)
 		m.permissionDialog.SetWidth(m.width - 20)
+		hasNewContent = true
 
 	case *acp.ModeUpdateMessage:
 		m.currentMode = msg.CurrentModeID
 
 	case *acp.StatusLineMessage:
 		m.statusLine = msg.Text
+	}
+
+	// 有新内容时强制启用自动滚动
+	if hasNewContent && m.thinking {
+		m.autoScroll = true
 	}
 }
 
@@ -782,7 +866,7 @@ func (m *Model) updateViewportContent() {
 		switch msg.Role {
 		case "user":
 			content.WriteString(styles.UserMessageStyle.Render("你: " + msg.Content))
-			content.WriteString("\n\n")
+			content.WriteString("\n")
 		case "agent":
 			// 对代理消息进行Markdown渲染
 			renderedContent := msg.Content
@@ -799,7 +883,7 @@ func (m *Model) updateViewportContent() {
 			content.WriteString("\n")
 		case "system":
 			content.WriteString(styles.SystemMessageStyle.Render("系统: " + msg.Content))
-			content.WriteString("\n\n")
+			content.WriteString("\n")
 		}
 	}
 

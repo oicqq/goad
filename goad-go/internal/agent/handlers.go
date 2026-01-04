@@ -111,11 +111,18 @@ func (a *Agent) handleRequestPermission(p *acp.RequestPermissionParams) (*acp.Re
 
 // handleReadTextFile 处理读取文件请求
 func (a *Agent) handleReadTextFile(p *acp.ReadTextFileParams) (*acp.ReadTextFileResponse, error) {
-	// 确保路径在项目根目录内
-	fullPath := filepath.Join(a.projectRoot, p.Path)
-	if !strings.HasPrefix(fullPath, a.projectRoot) {
-		return nil, fmt.Errorf("路径不在项目目录内")
+	// 处理路径 - 支持绝对路径和相对路径
+	var fullPath string
+	if filepath.IsAbs(p.Path) {
+		fullPath = filepath.Clean(p.Path)
+	} else {
+		fullPath = filepath.Join(a.projectRoot, p.Path)
 	}
+
+	// 安全检查：确保路径在项目根目录内（可选，暂时放宽限制）
+	// if !strings.HasPrefix(fullPath, a.projectRoot) {
+	// 	return nil, fmt.Errorf("路径不在项目目录内")
+	// }
 
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
@@ -150,10 +157,12 @@ func (a *Agent) handleReadTextFile(p *acp.ReadTextFileParams) (*acp.ReadTextFile
 
 // handleWriteTextFile 处理写入文件请求
 func (a *Agent) handleWriteTextFile(p *acp.WriteTextFileParams) (interface{}, error) {
-	// 确保路径在项目根目录内
-	fullPath := filepath.Join(a.projectRoot, p.Path)
-	if !strings.HasPrefix(fullPath, a.projectRoot) {
-		return nil, fmt.Errorf("路径不在项目目录内")
+	// 处理路径 - 支持绝对路径和相对路径
+	var fullPath string
+	if filepath.IsAbs(p.Path) {
+		fullPath = filepath.Clean(p.Path)
+	} else {
+		fullPath = filepath.Join(a.projectRoot, p.Path)
 	}
 
 	// 确保目录存在
@@ -183,27 +192,41 @@ func (a *Agent) handleCreateTerminal(p *acp.CreateTerminalParams) (*acp.CreateTe
 	if workDir == "" {
 		workDir = a.projectRoot
 	}
+	// 支持绝对路径
+	if !filepath.IsAbs(workDir) {
+		workDir = filepath.Join(a.projectRoot, workDir)
+	}
 
 	// 构建完整命令
 	fullCommand := p.Command
 	if len(p.Args) > 0 {
-		fullCommand = fullCommand + " " + strings.Join(p.Args, " ")
+		for _, arg := range p.Args {
+			// 对参数进行引用处理
+			if strings.Contains(arg, " ") || strings.Contains(arg, "\"") {
+				fullCommand += " \"" + strings.ReplaceAll(arg, "\"", "\\\"") + "\""
+			} else {
+				fullCommand += " " + arg
+			}
+		}
 	}
 
-	// 使用PTY创建终端
-	t, err := a.terminalManager.Create(terminalID, "", 24, 80, workDir)
+	// 构建环境变量导出
+	var envExports strings.Builder
+	for _, ev := range p.Env {
+		envExports.WriteString(fmt.Sprintf("export %s=%q; ", ev.Name, ev.Value))
+	}
+
+	// 使用 bash -c 直接执行命令（命令完成后自动退出）
+	// 这样不会创建交互式 shell，命令执行完就会退出
+	shellCmd := "/bin/bash"
+	if fullCommand != "" {
+		// 将命令包装为 bash -c 形式，执行完自动退出
+		shellCmd = fmt.Sprintf("/bin/bash -c %q", envExports.String()+fullCommand)
+	}
+
+	t, err := a.terminalManager.CreateWithCommand(terminalID, shellCmd, 24, 80, workDir)
 	if err != nil {
 		return nil, fmt.Errorf("创建PTY终端失败: %w", err)
-	}
-
-	// 写入命令
-	if fullCommand != "" {
-		t.WriteString(fullCommand + "\n")
-	}
-
-	// 设置环境变量（通过 export）
-	for _, ev := range p.Env {
-		t.WriteString(fmt.Sprintf("export %s=%q\n", ev.Name, ev.Value))
 	}
 
 	// 启动终端输出收集

@@ -12,6 +12,7 @@ import (
 
 	"github.com/anthropics/goad/internal/agent"
 	"github.com/anthropics/goad/internal/config"
+	"github.com/anthropics/goad/internal/server"
 	"github.com/anthropics/goad/internal/session"
 	"github.com/anthropics/goad/internal/tui"
 )
@@ -66,6 +67,7 @@ func init() {
 	// 添加子命令
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(serveCmd)
 }
 
 func runMain(cmd *cobra.Command, args []string) error {
@@ -388,4 +390,69 @@ var exportCmd = &cobra.Command{
 func init() {
 	exportCmd.Flags().StringP("format", "f", "markdown", "导出格式 (markdown, json, text)")
 	rootCmd.AddCommand(exportCmd)
+}
+
+// serve命令变量
+var (
+	serveHost string
+	servePort int
+)
+
+// serveCmd SSH服务器命令
+var serveCmd = &cobra.Command{
+	Use:   "serve [path]",
+	Short: "启动SSH服务器",
+	Long: `启动Goad SSH服务器，允许远程访问TUI界面。
+
+使用示例:
+  goad serve                    # 在localhost:2222启动
+  goad serve -p 2345            # 使用端口2345
+  goad serve --host 0.0.0.0     # 允许远程连接
+  goad serve -a claude ./myproject  # 指定项目和代理
+
+连接方式:
+  ssh localhost -p 2222`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runServe,
+}
+
+func init() {
+	serveCmd.Flags().StringVar(&serveHost, "host", "localhost", "监听地址")
+	serveCmd.Flags().IntVarP(&servePort, "port", "p", 2222, "监听端口")
+	serveCmd.Flags().StringVarP(&agentFlag, "agent", "a", "", "指定代理")
+}
+
+func runServe(cmd *cobra.Command, args []string) error {
+	// 确定项目目录
+	projectDir := "."
+	if len(args) > 0 {
+		projectDir = args[0]
+	}
+
+	absPath, err := filepath.Abs(projectDir)
+	if err != nil {
+		return fmt.Errorf("无法解析路径: %w", err)
+	}
+
+	// 确定代理
+	agentName := agentFlag
+	if agentName == "" {
+		cfg, _ := config.LoadAppConfig()
+		if cfg != nil && cfg.DefaultAgent != "" {
+			agentName = cfg.DefaultAgent
+		} else {
+			agentName = "claude"
+		}
+	}
+
+	// 创建并启动服务器
+	srv := server.New(server.Options{
+		Host:       serveHost,
+		Port:       servePort,
+		ProjectDir: absPath,
+		AgentName:  agentName,
+		AgentsFS:   agentsFS,
+	})
+
+	return srv.Start()
 }

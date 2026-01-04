@@ -37,6 +37,7 @@ type Agent struct {
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
 	stderr io.ReadCloser
+	stdinMu sync.Mutex // stdin 写入锁
 
 	// JSONRPC
 	client *jsonrpc.Client
@@ -311,31 +312,79 @@ func (a *Agent) readLoop() {
 			continue
 		}
 
-		// 检查是否是响应
-		if _, hasResult := data["result"]; hasResult {
-			a.client.ProcessResponse(&jsonrpc.Response{})
+		// 检查是否是响应（有result或error字段，且有id字段）
+		hasID := data["id"] != nil
+		if _, hasResult := data["result"]; hasResult && hasID {
 			var resp jsonrpc.Response
 			json.Unmarshal(line, &resp)
 			a.client.ProcessResponse(&resp)
 			continue
 		}
-		if _, hasError := data["error"]; hasError {
+		if _, hasError := data["error"]; hasError && hasID {
 			var resp jsonrpc.Response
 			json.Unmarshal(line, &resp)
 			a.client.ProcessResponse(&resp)
 			continue
 		}
 
-		// 是RPC请求，处理它
-		resp, err := a.server.Handle(a.ctx, line)
-		if err != nil {
+		// 检查是否是通知（有method字段但没有id字段）
+		method, hasMethod := data["method"].(string)
+		if hasMethod && !hasID {
+			// 这是通知，直接处理，不发送响应
+			if method == "session/update" {
+				if params, ok := data["params"].(map[string]interface{}); ok {
+					a.handleSessionUpdateNotification(params)
+				}
+			}
 			continue
 		}
-		if resp != nil {
-			respData, _ := json.Marshal(resp)
-			a.stdin.Write(append(respData, '\n'))
+
+		// 是RPC请求（有method和id），需要响应
+		if hasMethod && hasID {
+			resp, err := a.server.Handle(a.ctx, line)
+			if err != nil {
+				// 创建错误响应
+				var reqID *int64
+				if id, ok := data["id"].(float64); ok {
+					idVal := int64(id)
+					reqID = &idVal
+				}
+				errResp, _ := jsonrpc.NewErrorResponse(reqID, jsonrpc.InternalError, err.Error(), nil)
+				a.writeResponse(errResp)
+				continue
+			}
+			if resp != nil {
+				a.writeResponse(resp)
+			}
 		}
 	}
+}
+
+// writeResponse 安全地写入响应到 stdin
+func (a *Agent) writeResponse(resp *jsonrpc.Response) {
+	a.stdinMu.Lock()
+	defer a.stdinMu.Unlock()
+
+	respData, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
+	a.stdin.Write(append(respData, '\n'))
+}
+
+// handleSessionUpdateNotification 处理session/update通知
+func (a *Agent) handleSessionUpdateNotification(params map[string]interface{}) {
+	updateData, ok := params["update"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	updateRaw, err := json.Marshal(updateData)
+	if err != nil {
+		return
+	}
+
+	a.handleSessionUpdate(json.RawMessage(updateRaw))
 }
 
 // readStderr 读取错误输出
@@ -389,8 +438,8 @@ func (a *Agent) initialize() error {
 
 // newSession 创建新会话
 func (a *Agent) newSession() error {
-	// 构建MCP服务器列表
-	var mcpServers []acp.McpServer
+	// 构建MCP服务器列表（确保是空数组而不是nil）
+	mcpServers := make([]acp.McpServer, 0)
 	if a.appConfig != nil {
 		for _, serverCfg := range a.appConfig.GetEnabledMcpServers() {
 			server := acp.McpServer{

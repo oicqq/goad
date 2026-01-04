@@ -8,6 +8,7 @@ Goad 是 [Toad](https://github.com/willmcgugan/toad) 的 Go 语言实现，提�
 
 - **多代理支持**: Claude Code, OpenHands, Aider, Goose 等 14+ 代理
 - **TUI 界面**: 基于 Bubble Tea 的现代终端界面
+- **SSH 服务器**: 远程访问 TUI (基于 Wish 框架)
 - **代码高亮**: 支持 40+ 编程语言语法高亮
 - **会话管理**: 会话持久化、恢复、导出
 - **插件系统**: 可扩展的钩子机制
@@ -40,6 +41,30 @@ go build -o goad ./cmd/goad/main.go
 
 # 导出会话
 ./goad export <session-id> [output-file]
+```
+
+## SSH 服务器
+
+Goad 支持作为 SSH 服务器运行，允许远程访问 TUI 界面。
+
+```bash
+# 启动 SSH 服务器 (默认 localhost:2222)
+./goad serve
+
+# 指定端口
+./goad serve -p 2345
+
+# 允许远程连接
+./goad serve --host 0.0.0.0
+
+# 指定代理和项目目录
+./goad serve -a claude ./myproject
+```
+
+连接到服务器:
+
+```bash
+ssh localhost -p 2222
 ```
 
 ## 快捷键
@@ -117,6 +142,7 @@ goad-go/
 │   ├── jsonrpc/        # JSON-RPC 通信
 │   ├── metrics/        # 性能监控
 │   ├── plugin/         # 插件系统
+│   ├── server/         # SSH 服务器
 │   ├── session/        # 会话管理
 │   ├── terminal/       # PTY 终端
 │   └── tui/            # 终端界面
@@ -137,6 +163,7 @@ goad-go/
 
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea) - TUI 框架
 - [Lip Gloss](https://github.com/charmbracelet/lipgloss) - 样式库
+- [Wish](https://github.com/charmbracelet/wish) - SSH 服务器框架
 - [Glamour](https://github.com/charmbracelet/glamour) - Markdown 渲染
 - [Chroma](https://github.com/alecthomas/chroma) - 语法高亮
 - [fsnotify](https://github.com/fsnotify/fsnotify) - 文件监视

@@ -56,6 +56,24 @@ func (m *Manager) Create(id, shell string, rows, cols int, workDir string) (*Ter
 	cmd.Dir = workDir
 	cmd.Env = os.Environ()
 
+	return m.startTerminal(id, cmd, rows, cols)
+}
+
+// CreateWithCommand 创建终端并执行命令（命令完成后自动退出）
+func (m *Manager) CreateWithCommand(id, command string, rows, cols int, workDir string) (*Terminal, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 使用 sh -c 执行命令，命令完成后自动退出
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = workDir
+	cmd.Env = os.Environ()
+
+	return m.startTerminal(id, cmd, rows, cols)
+}
+
+// startTerminal 启动终端（内部方法）
+func (m *Manager) startTerminal(id string, cmd *exec.Cmd, rows, cols int) (*Terminal, error) {
 	// 启动PTY
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: uint16(rows),

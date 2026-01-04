@@ -22,7 +22,7 @@ type InitializeResponse struct {
 // NewSessionParams 新建会话请求参数
 type NewSessionParams struct {
 	Cwd        string      `json:"cwd"`
-	McpServers []McpServer `json:"mcpServers,omitempty"`
+	McpServers []McpServer `json:"mcpServers"`
 }
 
 // NewSessionResponse 新建会话响应
